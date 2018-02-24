@@ -73,7 +73,7 @@ uint32_t *pRemain;
 uint32_t *gcount;
 uint16_t *gRows, *pRows;
 uint16_t *ev2Rows;               // lookup table that gives the evolution of a row with a blank row above and a specified row below
-unsigned int *lastNonempty;
+int *lastNonempty;
 unsigned long long dumpPeriod;
 int bc[8] = {0, 1, 1, 2, 1, 2, 2, 3};
 char *buf;
