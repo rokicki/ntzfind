@@ -118,4 +118,4 @@ for i in s:
 with open("nttable.c", "w") as f:
     f.write("int nttable[] = {" + "".join([str(transtable[i]) + (",\n"+" "*17 if not (i+1)%16 else ", ") for i in xrange(512)])[:-19] + "};")
 
-system("gcc -O3 nt%sfind.c -o nt%sfind" % ((zorq,)*2)) #Change this command if not applicable to your system
+system("g++ -O3 nt%sfind.cpp -o nt%sfind" % ((zorq,)*2)) #Change this command if not applicable to your system
