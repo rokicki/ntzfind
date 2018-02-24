@@ -238,6 +238,20 @@ void makeTables() {
    for (int row2=0; row2<(1<<width); row2++)
       makeRow(0, row2) ;
 }
+uint16_t *bbuf ;
+int bbuf_left = 0 ;
+// reduce fragmentation by allocating chunks larger than needed and
+// parceling out the small pieces.
+uint16_t *bmalloc(int siz) {
+   if (siz > bbuf_left) {
+      bbuf_left = 1 << (2 * width) ;
+      bbuf = (uint16_t *)malloc(2*bbuf_left) ;
+   }
+   uint16_t *r = bbuf ;
+   bbuf += siz ;
+   bbuf_left -= siz ;
+   return r ;
+}
 uint16_t *makeRow(int row1, int row2) {
    uint32_t rows23 = row2 << width ;
    int good = 0 ;
@@ -253,7 +267,7 @@ uint16_t *makeRow(int row1, int row2) {
       gWork2[good] = row3 ;
       gWork[good++] = row4 ;
    }
-   uint16_t *row = (uint16_t *)malloc(sizeof(uint16_t)*(1+(1<<width)+good)) ;
+   uint16_t *row = bmalloc((1+(1<<width)+good)) ;
    gInd3[(row1<<width)+row2] = row ;
    for (int row3=0; row3 < 1<<width; row3++)
       row[row3] = 0 ;
