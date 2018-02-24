@@ -68,8 +68,9 @@ double get_cpu_time(){
 #endif
 
 int sp[NUM_PARAMS];
-uint32_t *gInd, *pInd;
-uint32_t *pRemain;
+uint16_t **pInd ;
+uint16_t *gInd2 ;
+int *pRemain;
 uint32_t *gcount;
 uint16_t *gRows, *pRows;
 uint16_t *ev2Rows;               // lookup table that gives the evolution of a row with a blank row above and a specified row below
@@ -189,9 +190,7 @@ int evolveRow(int row1, int row2, int row3){
    return row4;
 }
 
-void sortRows(uint32_t rowSet){
-   uint32_t totalRows = gInd[rowSet + 1] - gInd[rowSet];
-   uint16_t *row = &(gRows[gInd[rowSet]]);
+void sortRows(uint16_t *row, uint32_t totalRows) {
    uint32_t i;
    int64_t j;
    uint16_t t;
@@ -205,47 +204,72 @@ void sortRows(uint32_t rowSet){
       row[j+1] = t;
    }
 }
-
+uint16_t *getoffset(int row12) {
+   return gInd2 + row12 + (((long long)row12) << (width+1)) ;
+}
+uint16_t *getoffset(int row1, int row2) {
+   return getoffset((row1 << width) + row2) ;
+}
+void getoffsetcount(int row1, int row2, int row3, uint16_t* &p, int &n) {
+   uint16_t *row = getoffset(row1, row2) ;
+   p = row + row[row3] ;
+   n = row[row3+1] - row[row3] ;
+}
+int getcount(int row1, int row2, int row3) {
+   uint16_t *row = getoffset(row1, row2) ;
+   return row[row3+1] - row[row3] ;
+}
 void makeTables(){
    printf("\nBuilding lookup tables... ");
-   gInd = malloc(((long long)4 << (width * 3)) + 4);
-   ev2Rows = malloc((long long)sizeof(*ev2Rows) * (1 << (width * 2)));
-   gcount = malloc((long long)sizeof(*gcount) * (1 << width));
+   fflush(stdout) ;
+   size_t perGroup = sizeof(*gInd2) * (1 + (2 << width)) ;
+   gInd2 = (uint16_t *)malloc(perGroup << (2 * width)) ;
+   ev2Rows = (uint16_t *)malloc((long long)sizeof(*ev2Rows) * (1 << (width * 2)));
+   gcount = (uint32_t *)malloc((long long)sizeof(*gcount) * (1 << width));
    uint32_t i;
-   int row1,row2,row3,row4;
-   long int rows123,rows124;
    uint32_t numValid = 0;
    for(i = 0; i < 1 << width; ++i) gcount[i] = 0;
-   for(i = 0; i < ((1 << (3 * width)) + 1); i++)gInd[i] = 0;
-   rows123 = -1;     //represents row1, row2, and row3 stacked vertically
-   for(row1 = 0; row1 < 1 << width; row1++)for(row2 = 0; row2 < 1 << width; row2++)for(row3 = 0; row3 < 1 << width; row3++){
-      rows123++;
-      row4 = evolveRow(row1,row2,row3);
-      if(row4 < 0) continue;
-      ++gcount[row4];
-      if(row1 == 0) ev2Rows[rows123] = row4;
-      gInd[rows123 - row3 + row4]++;
-      numValid++;
+   int *gWork = (int *)malloc(2 * sizeof(int) << width) ;
+   int *gWork2 = gWork + (1 << width) ;
+   for(int row1 = 0; row1 < 1 << width; row1++) {
+      for(int row2 = 0; row2 < 1 << width; row2++) {
+         uint16_t *gindW = getoffset(row1, row2) ;
+         int good = 0 ;
+         for (int row3 = 0; row3 < 1<<width; row3++) {
+            gindW[row3] = 0 ;
+            int row4 = evolveRow(row1, row2, row3) ;
+            if (row4 < 0)
+               continue ;
+            gcount[row4]++ ;
+            gWork2[good] = row3 ;
+            gWork[good++] = row4 ;
+         }
+         gindW[0] = 1 + (1 << width) ;
+         for (int row3=0; row3 < good; row3++)
+            gindW[gWork[row3]]++ ;
+         gindW[1<<width] = 0 ;
+         for (int row3=0; row3 < (1<<width); row3++)
+            gindW[row3+1] += gindW[row3] ;
+         for (int row3=0; row3<good; row3++) {
+            int row4 = gWork[row3] ;
+            gindW[--gindW[row4]] = gWork2[row3] ;
+         }
+         numValid += good ;
+      }
    }
-   gRows = malloc(2 * numValid);
-   for(rows124 = 1; rows124 < 1 << (3 * width); rows124++) gInd[rows124] += gInd[rows124 - 1];
-   gInd[1 << (3 * width)] = gInd[(1 << (3 * width)) - 1];  //extra needed for last set to calculate number
-   rows123 = -1;
-   for(row1 = 0; row1 < 1 << width; row1++)for(row2 = 0; row2 < 1 << width; row2++)for(row3 = 0; row3 < 1 << width; row3++){
-      rows123++;
-      row4 = evolveRow(row1,row2,row3);
-      if(row4 < 0) continue;
-      rows124 = rows123 - row3 + row4;
-      gInd[rows124]--;
-      gRows[gInd[rows124]] = (uint16_t)row3;
-   }
+ printf("Total valid is %d\n", numValid) ;
+   free(gWork) ;
    printf("Lookup tables built.\n");
    
    gcount[0] = 0;
    if(sp[P_REORDER]){
       printf("Sorting lookup table..... ");
-      for(rows124 = 0; rows124 < 1 << (3 * width); ++rows124){
-         sortRows(rows124);
+      fflush(stdout) ;
+      for (int rows12 = 0; rows12 < 1 << (2 * width); rows12++) {
+         uint16_t *row = getoffset(rows12) ;
+         for (int row3 = 0 ; row3 < 1 << width; row3++) {
+            sortRows(row + row[row3], row[row3+1]-row[row3]) ;
+         }
       }
       printf("Lookup table sorted.\n");
    }
@@ -296,65 +320,48 @@ void printPattern(){
 }
 
 int lookAhead(int a){
-   uint32_t ri11, ri12, ri13, ri22, ri23;  //indices: first number represents vertical offset, second number represents generational offset
-   uint32_t rowSet11, rowSet12, rowSet13, rowSet22, rowSet23, rowSet33;
-   uint32_t riStart11, riStart12, riStart13, riStart22, riStart23;
-   uint32_t numRows11, numRows12, numRows13, numRows22, numRows23;
-   uint32_t row11, row12, row13, row22, row23;
-   
-   rowSet11 = (pRows[a - sp[P_PERIOD] - fwdOff[phase]] << (2 * sp[P_WIDTH]))
-             +(pRows[a - fwdOff[phase]] << sp[P_WIDTH])
-             + pRows[a];
-   riStart11 = gInd[rowSet11];
-   numRows11 = gInd[rowSet11 + 1] - riStart11;
-   if(!numRows11) return 0;
-   
-   rowSet12 = (pRows[a - sp[P_PERIOD] - doubleOff[phase]] << (2 * sp[P_WIDTH]))
-             +(pRows[a - doubleOff[phase]] << sp[P_WIDTH])
-             + pRows[a - fwdOff[phase]];
-   riStart12 = gInd[rowSet12];
-   numRows12 = gInd[rowSet12 + 1] - riStart12;
+   int ri11, ri12, ri13, ri22, ri23;  //indices: first number represents vertical offset, second number represents generational offset
+   uint16_t *riStart11, *riStart12, *riStart13, *riStart22, *riStart23;
+   int numRows11, numRows12, numRows13, numRows22, numRows23;
+   int row11, row12, row13, row22, row23;
+
+   getoffsetcount(pRows[a - sp[P_PERIOD] - fwdOff[phase]],
+                  pRows[a - fwdOff[phase]],
+                  pRows[a], riStart11, numRows11) ;
+   if (!numRows11)
+      return 0 ;
+   getoffsetcount(pRows[a - sp[P_PERIOD] - doubleOff[phase]],
+                  pRows[a - doubleOff[phase]],
+                  pRows[a - fwdOff[phase]], riStart12, numRows12) ;
    
    if(tripleOff[phase] >= sp[P_PERIOD]){
-      riStart13 = pInd[a + sp[P_PERIOD] - tripleOff[phase]] + pRemain[a + sp[P_PERIOD] - tripleOff[phase]];
+      riStart13 = pInd[a + sp[P_PERIOD] - tripleOff[phase]] + (pRemain[a + sp[P_PERIOD] - tripleOff[phase]]);
       numRows13 = 1;
+   } else {
+      getoffsetcount(pRows[a - sp[P_PERIOD] - tripleOff[phase]],
+                     pRows[a - tripleOff[phase]],
+                     pRows[a - doubleOff[phase]], riStart13, numRows13) ;
    }
-   else{
-      rowSet13 = (pRows[a - sp[P_PERIOD] - tripleOff[phase]] << (2 * sp[P_WIDTH]))
-                +(pRows[a - tripleOff[phase]] << sp[P_WIDTH])
-                + pRows[a - doubleOff[phase]];
-      riStart13 = gInd[rowSet13];
-      numRows13 = gInd[rowSet13 + 1] - riStart13;
-   }
-   
    for(ri11 = 0; ri11 < numRows11; ++ri11){
-      row11 = gRows[ri11 + riStart11];
+      row11 = riStart11[ri11];
       for(ri12 = 0; ri12 < numRows12; ++ri12){
-         row12 = gRows[ri12 + riStart12];
-         rowSet22 = (pRows[a - doubleOff[phase]] << (2 * sp[P_WIDTH]))
-                   +(row12 << sp[P_WIDTH])
-                   + row11;
-         riStart22 = gInd[rowSet22];
-         numRows22 = gInd[rowSet22 + 1] - riStart22;
+         row12 = riStart12[ri12] ;
+         getoffsetcount(pRows[a - doubleOff[phase]],
+                        row12, row11, riStart22, numRows22) ;
          if(!numRows22) continue;
          
          for(ri13 = 0; ri13 < numRows13; ++ri13){
-            row13 = gRows[ri13 + riStart13];
-            rowSet23 = (pRows[a - tripleOff[phase]] << (2 * sp[P_WIDTH]))
-                      +(row13 << sp[P_WIDTH])
-                      + row12;
-            riStart23 = gInd[rowSet23];
-            numRows23 = gInd[rowSet23 + 1] - riStart23;
+            row13 = riStart13[ri13] ;
+            getoffsetcount(pRows[a - tripleOff[phase]],
+                           row13, row12, riStart23, numRows23) ;
             if(!numRows23) continue;
             
             for(ri22 = 0; ri22 < numRows22; ++ri22){
-               row22 = gRows[ri22 + riStart22];
+               row22 = riStart22[ri22] ;
                for(ri23 = 0; ri23 < numRows23; ++ri23){
-                  row23 = gRows[ri23 + riStart23];
-                  rowSet33 = (row13 << (2 * sp[P_WIDTH]))
-                            +(row23 << sp[P_WIDTH])
-                            + row22;
-                  if(gInd[rowSet33] != gInd[rowSet33 + 1]) return 1;
+                  row23 = riStart23[ri23] ;
+                  if (getcount(row13, row23, row22))
+                     return 1 ;
                }
             }
          }
@@ -404,7 +411,7 @@ void dumpState(int v){ // v = rowNum
        fprintf(fp,"%lu\n",(unsigned long) pRows[i]);
     for (i = 2 * period; i <= v; i++){
        fprintf(fp,"%lu\n",(unsigned long) pRows[i]);
-       fprintf(fp,"%lu\n",(unsigned long) pInd[i]);
+       fprintf(fp,"%ld\n", pInd[i]-gInd2);
        fprintf(fp,"%lu\n",(unsigned long) pRemain[i]);
     }
     fclose(fp);
@@ -421,7 +428,6 @@ int checkInteract(int a){
 
 void search(){
    uint32_t currRow = rowNum;    // currRow == index of current row
-   uint32_t newRowSet;           // used when determining the next row to be added
    int j;
    unsigned long long calcs, lastLong;
    int noship = 0;
@@ -470,7 +476,7 @@ void search(){
          continue;
       }
       --pRemain[currRow];
-      pRows[currRow] = gRows[pInd[currRow] + pRemain[currRow]];
+      pRows[currRow] = pInd[currRow][pRemain[currRow]];
       if(sp[P_MAX_LENGTH] && currRow > sp[P_MAX_LENGTH] + 2 * period - 1 && pRows[currRow] != 0) continue;  //back up if length exceeds max length
       if(sp[P_FULL_PERIOD] && currRow > sp[P_FULL_PERIOD] && !firstFull && pRows[currRow]) continue;        //back up if not full period by certain length
       if(sp[P_FULL_WIDTH] && (pRows[currRow] & fpBitmask)){
@@ -522,11 +528,10 @@ void search(){
          printInfo(currRow,calcs,get_cpu_time() - ms);
          return;
       }
-      newRowSet = (pRows[currRow - 2 * period] << (2 * sp[P_WIDTH]))
-                 +(pRows[currRow - period] << sp[P_WIDTH])
-                 + pRows[currRow - period + backOff[phase]];
-      pRemain[currRow] = gInd[newRowSet + 1] - gInd[newRowSet];
-      pInd[currRow] = gInd[newRowSet];
+      getoffsetcount(pRows[currRow - 2 * period],
+                     pRows[currRow - period],
+                     pRows[currRow - period + backOff[phase]],
+                     pInd[currRow], pRemain[currRow]) ;
    }
 }
 
@@ -543,9 +548,9 @@ signed int loadInt(FILE *fp){
    return v;
 }
 
-unsigned long loadUL(FILE *fp){
-   unsigned long v;
-   if (fscanf(fp,"%lu\n",&v) != 1) loadFail();
+long long loadUL(FILE *fp){
+   long long v;
+   if (fscanf(fp,"%lld\n",&v) != 1) loadFail();
    return v;
 }
 
@@ -570,7 +575,7 @@ void loadState(char * cmd, char * file){
 
    firstFull = loadInt(fp);
    shipNum = loadInt(fp);
-   lastNonempty = malloc(sizeof(int) * (sp[P_DEPTH_LIMIT]/10));
+   lastNonempty = (int *)malloc(sizeof(int) * (sp[P_DEPTH_LIMIT]/10));
    for (i = 1; i <= shipNum; i++)
       lastNonempty[i] = loadUL(fp);
    rowNum = loadInt(fp);
@@ -592,15 +597,15 @@ void loadState(char * cmd, char * file){
       }
    }
    
-   pRows = malloc(sp[P_DEPTH_LIMIT] * 2);
-   pInd = malloc(sp[P_DEPTH_LIMIT] * 4);
-   pRemain = malloc(sp[P_DEPTH_LIMIT] * 4);
+   pRows = (uint16_t *)malloc(sp[P_DEPTH_LIMIT] * sizeof(uint16_t));
+   pInd = (uint16_t **)malloc(sp[P_DEPTH_LIMIT] * sizeof(uint16_t *));
+   pRemain = (int *)malloc(sp[P_DEPTH_LIMIT] * sizeof(int));
    
    for (i = 0; i < 2 * period; i++)
       pRows[i] = (uint16_t) loadUL(fp);
    for (i = 2 * period; i <= rowNum; i++){
       pRows[i]   = (uint16_t) loadUL(fp);
-      pInd[i]    = (uint32_t) loadUL(fp);
+      pInd[i]    = loadUL(fp) + gInd2 ;
       pRemain[i] = (uint32_t) loadUL(fp);
    }
    fclose(fp);
@@ -651,10 +656,10 @@ void initializeSearch(char * file){
       }
    }
    
-   pRows = malloc(sp[P_DEPTH_LIMIT] * 2);
-   pInd = malloc(sp[P_DEPTH_LIMIT] * 4);
-   pRemain = malloc(sp[P_DEPTH_LIMIT] * 4);
-   lastNonempty = malloc(sizeof(int) * (sp[P_DEPTH_LIMIT]/10));
+   pRows = (uint16_t *)malloc(sp[P_DEPTH_LIMIT] * sizeof(uint16_t));
+   pInd = (uint16_t **)malloc(sp[P_DEPTH_LIMIT] * sizeof(uint16_t *));
+   pRemain = (int *)malloc(sp[P_DEPTH_LIMIT] * sizeof(int));
+   lastNonempty = (int *)malloc(sizeof(int) * (sp[P_DEPTH_LIMIT]/10));
    rowNum = 2 * period;
    for(i = 0; i < 2 * period; i++)pRows[i] = 0;
    if(sp[P_INIT_ROWS]) loadInitRows(file);
@@ -769,12 +774,12 @@ int main(int argc, char *argv[]){
             skipNext = 0;
             continue;
          }
+         int sshift ;
          switch(argv[s][0]){
             case 'b': case 'B':     //read rule
                sp[P_RULE] = 0;
-               int sshift = 0;
-               int i;
-               for(i = 1; i < 100; i++){
+               sshift = 0;
+               for(int i = 1; i < 100; i++){
                   int rnum = argv[s][i];
                   if(!rnum)break;
                   if(rnum == 's' || rnum == 'S')sshift = 9;
@@ -822,12 +827,15 @@ int main(int argc, char *argv[]){
    }
    makeTables();                    //make lookup tables for determining successor rows
    if(!loadDumpFlag){               //these initialization steps must be performed after makeTables()
-      pRemain[2 * period] = gInd[1] - gInd[0] - 1;
-      pInd[2 * period] = gInd[0];
+      for (int i=0; i<sp[P_DEPTH_LIMIT]; i++) {
+         pInd[i] = gInd2 + gInd2[0] ;
+         pRemain[i] = 0 ;
+      }
+      pRemain[2 * period] = gInd2[1] - gInd2[0] - 1 ;
+      pInd[2 * period] = gInd2 + gInd2[0] ;
       if(sp[P_INIT_ROWS]){
-         s = (pRows[0] << (2 * width)) + (pRows[period] << width) + pRows[period + backOff[0]];
-         pRemain[2 * period] = gInd[s + 1] - gInd[s];
-         pInd[2 * period] = gInd[s];
+         getoffsetcount(pRows[0], pRows[period], pRows[period+backOff[0]],
+                        pInd[2*period], pRemain[2*period]) ;
       }
    }
    if(dumpandexit){
@@ -836,7 +844,7 @@ int main(int argc, char *argv[]){
       else printf("Dump failed\n");
       return 0;
    }
-   buf = malloc((2*sp[P_WIDTH] + 4) * sp[P_DEPTH_LIMIT]);  // I think this gives more than enough space
+   buf = (char *)malloc((2*sp[P_WIDTH] + 4) * sp[P_DEPTH_LIMIT]);  // I think this gives more than enough space
    buf[0] = '\0';
    printf("Starting search\n");
    search();
