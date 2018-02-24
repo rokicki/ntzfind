@@ -237,6 +237,8 @@ void makeTables() {
    memusage = (sizeof(*gInd3)+sizeof(*ev2Rows)) << (width*2) ;
    uint32_t i;
    for(i = 0; i < 1 << width; ++i) gcount[i] = 0;
+   for (int i=0; i<1<<(2*width); i++)
+      ev2Rows[i] = 0 ;
    gWork = (int *)malloc(2 * sizeof(int) << width) ;
    gcount[0] = 0;
    if (sp[P_REORDER] == 2)
@@ -279,12 +281,12 @@ uint16_t *makeRow(int row1, int row2, int dosort) {
    uint32_t rows23 = row2 << width ;
    int good = 0 ;
    int *gWork2 = gWork + (1 << width) ;
-   for (int row3 = 0; row3 < 1<<width; row3++) {
+   for (int row3 = 0; row3 < 1<<width; row3++, rows23++) {
       int row4 = evolveRow(row1, row2, row3) ;
-      if (row1 == 0) ev2Rows[rows23] = row4 ;
-      rows23++ ;
       if (row4 < 0)
          continue ;
+      if (row1 == 0)
+         ev2Rows[rows23] = row4 ;
       if (sp[P_REORDER] == 1)
          gcount[row4]++ ;
       gWork2[good] = row3 ;
