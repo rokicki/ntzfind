@@ -311,10 +311,14 @@ uint16_t *makeRow(int row1, int row2, int dosort) {
    }
    if(dosort && sp[P_REORDER])
       sortall(row) ;
+/*
+ *   For debugging:
+ *
    printf("R") ;
    for (int i=0; i<1+(1<<width)+good; i++)
       printf(" %d", row[i]) ;
    printf("\n") ;
+ */
    return row ;
 }
 
@@ -896,6 +900,7 @@ int main(int argc, char *argv[]){
    buf = (char *)malloc((2*sp[P_WIDTH] + 4) * sp[P_DEPTH_LIMIT]);  // I think this gives more than enough space
    buf[0] = '\0';
    printf("Starting search\n");
+   fflush(stdout) ;
    search();
    return 0;
 }
