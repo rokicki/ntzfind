@@ -241,7 +241,7 @@ void makeTables() {
       rowHash[i] = -1 ;
    ev2Rows = (uint16_t *)malloc(sizeof(*ev2Rows) * (1LL << (width * 2)));
    gcount = (uint32_t *)malloc(sizeof(*gcount) * (1LL << width));
-   memusage = (sizeof(*gInd3)+sizeof(*ev2Rows)) << (width*2) ;
+   memusage = (sizeof(*gInd3)+sizeof(*ev2Rows)+2*sizeof(int)) << (width*2) ;
    uint32_t i;
    for(i = 0; i < 1 << width; ++i) gcount[i] = 0;
    for (int i=0; i<1<<(2*width); i++)
