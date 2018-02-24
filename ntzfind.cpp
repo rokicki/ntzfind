@@ -261,8 +261,11 @@ void makeTables(){
    free(gWork) ;
    printf("Lookup tables built.\n");
    
-   gcount[0] = 0;
    if(sp[P_REORDER]){
+      gcount[0] = 0;
+      if (sp[P_REORDER] == 2)
+         for (int i=1; i<1<<width; i++)
+            gcount[i] = 1 + (lrand48() & 0x3fffffff) ;
       printf("Sorting lookup table..... ");
       fflush(stdout) ;
       for (int rows12 = 0; rows12 < 1 << (2 * width); rows12++) {
@@ -691,6 +694,7 @@ void echoParams(){
    else printf("Stop search if %d ships are found.\n",sp[P_NUM_SHIPS]);
    if(sp[P_DUMP])printf("Dump period: 2^%d\n",sp[P_DUMP]);
    if(!sp[P_REORDER]) printf("Use naive search order.\n");
+   if (sp[P_REORDER] == 2) printf("Use randomized search order.\n");
    if(sp[P_INIT_ROWS]){
       printf("Initial rows:\n");
       for(i = 0; i < 2 * period; i++){
@@ -802,9 +806,12 @@ int main(int argc, char *argv[]){
             case 's': case 'S': sscanf(&argv[s][1], "%d", &sp[P_NUM_SHIPS]); break;
             case 't': case 'T': sscanf(&argv[s][1], "%d", &sp[P_FULL_WIDTH]); break;
             case 'o': case 'O': sp[P_REORDER] = 0; break;
+            case 'r': case 'R': sp[P_REORDER] = 2; break;
          }
       }
    }
+   if (sp[P_REORDER] == 2)
+      srand48(time(0)) ;
    if(loadDumpFlag) loadState(argv[1],argv[2]);     //load search state from file
    else initializeSearch(argv[sp[P_INIT_ROWS]]);    //initialize search based on input parameters
    if(!sp[P_WIDTH] || !sp[P_PERIOD] || !sp[P_OFFSET] || !sp[P_SYMMETRY]){
