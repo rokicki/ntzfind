@@ -231,10 +231,14 @@ void sortall(uint16_t *row) {
    for (int row3 = 0 ; row3 < 1 << width; row3++)
       sortRows(row + row[row3], row[row3+1]-row[row3]) ;
 }
+int *rowHash ;
 void makeTables() {
    gInd3 = (uint16_t **)malloc(sizeof(*gInd3)*(1LL<<(width*2))) ;
+   rowHash = (int *)malloc(sizeof(int)*(2LL<<(width*2))) ;
    for (int i=0; i<1<<(2*width); i++)
       gInd3[i] = 0 ;
+   for (int i=0; i<2<<(2*width); i++)
+      rowHash[i] = -1 ;
    ev2Rows = (uint16_t *)malloc(sizeof(*ev2Rows) * (1LL << (width * 2)));
    gcount = (uint32_t *)malloc(sizeof(*gcount) * (1LL << width));
    memusage = (sizeof(*gInd3)+sizeof(*ev2Rows)) << (width*2) ;
@@ -280,6 +284,16 @@ uint16_t *bmalloc(int siz) {
    bbuf_left -= siz ;
    return r ;
 }
+void unbmalloc(int siz) {
+   bbuf -= siz ;
+   bbuf_left += siz ;
+}
+unsigned int hashRow(uint16_t *row, int siz) {
+   unsigned int h = 0 ;
+   for (int i=0; i<siz; i++)
+      h = h * 3 + row[i] ;
+   return h ;
+}
 uint16_t *makeRow(int row1, int row2, int dosort) {
    uint32_t rows23 = row2 << width ;
    int good = 0 ;
@@ -311,6 +325,20 @@ uint16_t *makeRow(int row1, int row2, int dosort) {
    }
    if(dosort && sp[P_REORDER])
       sortall(row) ;
+   unsigned int h = hashRow(row, 1+(1<<width)+good) ;
+   h &= (2 << (2 * width)) - 1 ;
+   while (1) {
+      if (rowHash[h] == -1) {
+         rowHash[h] = (row1 << width) + row2 ;
+         break ;
+      }
+      if (memcmp(row, gInd3[rowHash[h]], 2*(1+(1<<width)+good)) == 0) {
+         row = gInd3[rowHash[h]] ;
+         unbmalloc(1+(1<<width)+good) ;
+         break ;
+      }
+      h = (h + 1) & ((2 << (2 * width)) - 1) ;
+   }
 /*
  *   For debugging:
  *
