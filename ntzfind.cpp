@@ -825,6 +825,11 @@ void usage(){
 }
 
 int main(int argc, char *argv[]){
+   printf("%s\n", BANNER) ;
+   printf("-") ;
+   for (int i=0; i<argc; i++)
+      printf(" %s", argv[i]) ;
+   printf("\n") ;
    sp[P_RULE] = 6152;         //first 9 bits represent births; next 9 bits represent survivals
    sp[P_WIDTH] = 0;
    sp[P_PERIOD] = 0;
