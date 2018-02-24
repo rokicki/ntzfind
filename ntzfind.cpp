@@ -76,6 +76,8 @@ uint16_t *gRows, *pRows;
 uint16_t *ev2Rows;               // lookup table that gives the evolution of a row with a blank row above and a specified row below
 int *lastNonempty;
 unsigned long long dumpPeriod;
+long long memusage ;
+long long memlimit = 0x7000000000000000LL ;
 int bc[8] = {0, 1, 1, 2, 1, 2, 2, 3};
 char *buf;
 
@@ -228,6 +230,7 @@ void makeTables() {
    gInd3 = (uint16_t **)malloc(sizeof(*gInd3)*(1LL<<(width*2))) ;
    ev2Rows = (uint16_t *)malloc(sizeof(*ev2Rows) * (1LL << (width * 2)));
    gcount = (uint32_t *)malloc(sizeof(*gcount) * (1LL << width));
+   memusage = (sizeof(*gInd3)+sizeof(*ev2Rows)) << (width*2) ;
    uint32_t i;
    for(i = 0; i < 1 << width; ++i) gcount[i] = 0;
    gWork = (int *)malloc(2 * sizeof(int) << width) ;
@@ -235,6 +238,9 @@ void makeTables() {
    if (sp[P_REORDER] == 2)
       for (int i=1; i<1<<width; i++)
          gcount[i] = 1 + (lrand48() & 0x3fffffff) ;
+   if (sp[P_REORDER] == 2)
+      for (int i=1; i<1<<width; i++)
+         gcount[i] = 1 + gcount[i & (i - 1)] ;
    for (int row2=0; row2<(1<<width); row2++)
       makeRow(0, row2) ;
 }
@@ -245,6 +251,11 @@ int bbuf_left = 0 ;
 uint16_t *bmalloc(int siz) {
    if (siz > bbuf_left) {
       bbuf_left = 1 << (2 * width) ;
+      memusage += 2*bbuf_left ;
+      if (memusage > memlimit) {
+         printf("Aborting due to excessive memory usage\n") ;
+         exit(0) ;
+      }
       bbuf = (uint16_t *)malloc(2*bbuf_left) ;
    }
    uint16_t *r = bbuf ;
@@ -703,6 +714,7 @@ void echoParams(){
    if(sp[P_DUMP])printf("Dump period: 2^%d\n",sp[P_DUMP]);
    if(!sp[P_REORDER]) printf("Use naive search order.\n");
    if (sp[P_REORDER] == 2) printf("Use randomized search order.\n");
+   if (sp[P_REORDER] == 3) printf("Use min population search order.\n");
    if(sp[P_INIT_ROWS]){
       printf("Initial rows:\n");
       for(i = 0; i < 2 * period; i++){
@@ -814,7 +826,9 @@ int main(int argc, char *argv[]){
             case 's': case 'S': sscanf(&argv[s][1], "%d", &sp[P_NUM_SHIPS]); break;
             case 't': case 'T': sscanf(&argv[s][1], "%d", &sp[P_FULL_WIDTH]); break;
             case 'o': case 'O': sp[P_REORDER] = 0; break;
-            case 'r': case 'R': sp[P_REORDER] = 2; break;
+            case 'r':           sp[P_REORDER] = 2; break;
+            case 'n':           sp[P_REORDER] = 3; break;
+            case 'R': sscanf(&argv[s][1], "%lld", &memlimit) ; memlimit <<= 20 ; break ;
          }
       }
    }
