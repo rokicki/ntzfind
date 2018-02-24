@@ -69,7 +69,7 @@ double get_cpu_time(){
 
 int sp[NUM_PARAMS];
 uint16_t **pInd ;
-uint16_t *gInd2 ;
+uint16_t **gInd3 ;
 int *pRemain;
 uint32_t *gcount;
 uint16_t *gRows, *pRows;
@@ -205,7 +205,7 @@ void sortRows(uint16_t *row, uint32_t totalRows) {
    }
 }
 uint16_t *getoffset(int row12) {
-   return gInd2 + row12 + (((long long)row12) << (width+1)) ;
+   return gInd3[row12] ;
 }
 uint16_t *getoffset(int row1, int row2) {
    return getoffset((row1 << width) + row2) ;
@@ -222,10 +222,9 @@ int getcount(int row1, int row2, int row3) {
 void makeTables(){
    printf("\nBuilding lookup tables... ");
    fflush(stdout) ;
-   size_t perGroup = sizeof(*gInd2) * (1 + (2 << width)) ;
-   gInd2 = (uint16_t *)malloc(perGroup << (2 * width)) ;
-   ev2Rows = (uint16_t *)malloc((long long)sizeof(*ev2Rows) * (1 << (width * 2)));
-   gcount = (uint32_t *)malloc((long long)sizeof(*gcount) * (1 << width));
+   gInd3 = (uint16_t **)malloc(sizeof(*gInd3)*(1LL<<(width*2))) ;
+   ev2Rows = (uint16_t *)malloc(sizeof(*ev2Rows) * (1LL << (width * 2)));
+   gcount = (uint32_t *)malloc(sizeof(*gcount) * (1LL << width));
    uint32_t i;
    for(i = 0; i < 1 << width; ++i) gcount[i] = 0;
    int *gWork = (int *)malloc(2 * sizeof(int) << width) ;
@@ -233,10 +232,8 @@ void makeTables(){
    uint32_t rows123 = 0 ;
    for(int row1 = 0; row1 < 1 << width; row1++) {
       for(int row2 = 0; row2 < 1 << width; row2++) {
-         uint16_t *gindW = getoffset(row1, row2) ;
          int good = 0 ;
          for (int row3 = 0; row3 < 1<<width; row3++) {
-            gindW[row3] = 0 ;
             int row4 = evolveRow(row1, row2, row3) ;
             if (row1 == 0) ev2Rows[rows123] = row4 ;
             rows123++ ;
@@ -246,6 +243,11 @@ void makeTables(){
             gWork2[good] = row3 ;
             gWork[good++] = row4 ;
          }
+ printf("Alloc %d\n", 1+(1<<width)+good) ;
+         uint16_t *gindW = (uint16_t *)malloc(sizeof(uint16_t)*(1+(1<<width)+good)) ;
+         gInd3[(row1<<width)+row2] = gindW ;
+         for (int row3=0; row3 < 1<<width; row3++)
+            gindW[row3] = 0 ;
          gindW[0] = 1 + (1 << width) ;
          for (int row3=0; row3 < good; row3++)
             gindW[gWork[row3]]++ ;
@@ -270,9 +272,8 @@ void makeTables(){
       fflush(stdout) ;
       for (int rows12 = 0; rows12 < 1 << (2 * width); rows12++) {
          uint16_t *row = getoffset(rows12) ;
-         for (int row3 = 0 ; row3 < 1 << width; row3++) {
+         for (int row3 = 0 ; row3 < 1 << width; row3++)
             sortRows(row + row[row3], row[row3+1]-row[row3]) ;
-         }
       }
       printf("Lookup table sorted.\n");
    }
@@ -414,7 +415,7 @@ void dumpState(int v){ // v = rowNum
        fprintf(fp,"%lu\n",(unsigned long) pRows[i]);
     for (i = 2 * period; i <= v; i++){
        fprintf(fp,"%lu\n",(unsigned long) pRows[i]);
-       fprintf(fp,"%ld\n", pInd[i]-gInd2);
+// broken       fprintf(fp,"%ld\n", pInd[i]-gInd2);
        fprintf(fp,"%lu\n",(unsigned long) pRemain[i]);
     }
     fclose(fp);
@@ -608,7 +609,7 @@ void loadState(char * cmd, char * file){
       pRows[i] = (uint16_t) loadUL(fp);
    for (i = 2 * period; i <= rowNum; i++){
       pRows[i]   = (uint16_t) loadUL(fp);
-      pInd[i]    = loadUL(fp) + gInd2 ;
+// broken      pInd[i]    = loadUL(fp) + gInd2 ;
       pRemain[i] = (uint32_t) loadUL(fp);
    }
    fclose(fp);
@@ -835,11 +836,11 @@ int main(int argc, char *argv[]){
    makeTables();                    //make lookup tables for determining successor rows
    if(!loadDumpFlag){               //these initialization steps must be performed after makeTables()
       for (int i=0; i<sp[P_DEPTH_LIMIT]; i++) {
-         pInd[i] = gInd2 + gInd2[0] ;
+         pInd[i] = gInd3[0] + gInd3[0][0] ;
          pRemain[i] = 0 ;
       }
-      pRemain[2 * period] = gInd2[1] - gInd2[0] - 1 ;
-      pInd[2 * period] = gInd2 + gInd2[0] ;
+      pRemain[2 * period] = gInd3[0][1] - gInd3[0][0] - 1 ;
+      pInd[2 * period] = gInd3[0] + gInd3[0][0] ;
       if(sp[P_INIT_ROWS]){
          getoffsetcount(pRows[0], pRows[period], pRows[period+backOff[0]],
                         pInd[2*period], pRemain[2*period]) ;
