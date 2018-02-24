@@ -236,10 +236,10 @@ void makeTables(){
          uint16_t *gindW = getoffset(row1, row2) ;
          int good = 0 ;
          for (int row3 = 0; row3 < 1<<width; row3++) {
-            rows123++ ;
             gindW[row3] = 0 ;
             int row4 = evolveRow(row1, row2, row3) ;
-            if(row1 == 0) ev2Rows[rows123] = row4 ;
+            if (row1 == 0) ev2Rows[rows123] = row4 ;
+            rows123++ ;
             if (row4 < 0)
                continue ;
             gcount[row4]++ ;
