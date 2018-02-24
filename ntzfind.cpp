@@ -227,17 +227,19 @@ void makeTables(){
    ev2Rows = (uint16_t *)malloc((long long)sizeof(*ev2Rows) * (1 << (width * 2)));
    gcount = (uint32_t *)malloc((long long)sizeof(*gcount) * (1 << width));
    uint32_t i;
-   uint32_t numValid = 0;
    for(i = 0; i < 1 << width; ++i) gcount[i] = 0;
    int *gWork = (int *)malloc(2 * sizeof(int) << width) ;
    int *gWork2 = gWork + (1 << width) ;
+   uint32_t rows123 = 0 ;
    for(int row1 = 0; row1 < 1 << width; row1++) {
       for(int row2 = 0; row2 < 1 << width; row2++) {
          uint16_t *gindW = getoffset(row1, row2) ;
          int good = 0 ;
          for (int row3 = 0; row3 < 1<<width; row3++) {
+            rows123++ ;
             gindW[row3] = 0 ;
             int row4 = evolveRow(row1, row2, row3) ;
+            if(row1 == 0) ev2Rows[rows123] = row4 ;
             if (row4 < 0)
                continue ;
             gcount[row4]++ ;
@@ -254,10 +256,8 @@ void makeTables(){
             int row4 = gWork[row3] ;
             gindW[--gindW[row4]] = gWork2[row3] ;
          }
-         numValid += good ;
       }
    }
- printf("Total valid is %d\n", numValid) ;
    free(gWork) ;
    printf("Lookup tables built.\n");
    
