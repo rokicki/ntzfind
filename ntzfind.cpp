@@ -206,11 +206,11 @@ void sortRows(uint16_t *row, uint32_t totalRows) {
       row[j+1] = t;
    }
 }
-uint16_t *makeRow(int row1, int row2) ;
+uint16_t *makeRow(int row1, int row2, int doSort) ;
 uint16_t *getoffset(int row12) {
    uint16_t *r = gInd3[row12] ;
    if (r == 0)
-      r = makeRow(row12 >> width, row12 & ((1 << width) - 1)) ;
+      r = makeRow(row12 >> width, row12 & ((1 << width) - 1), 1) ;
    return r ;
 }
 uint16_t *getoffset(int row1, int row2) {
@@ -226,6 +226,10 @@ int getcount(int row1, int row2, int row3) {
    return row[row3+1] - row[row3] ;
 }
 int *gWork ;
+void sortall(uint16_t *row) {
+   for (int row3 = 0 ; row3 < 1 << width; row3++)
+      sortRows(row + row[row3], row[row3+1]-row[row3]) ;
+}
 void makeTables() {
    gInd3 = (uint16_t **)malloc(sizeof(*gInd3)*(1LL<<(width*2))) ;
    ev2Rows = (uint16_t *)malloc(sizeof(*ev2Rows) * (1LL << (width * 2)));
@@ -238,11 +242,19 @@ void makeTables() {
    if (sp[P_REORDER] == 2)
       for (int i=1; i<1<<width; i++)
          gcount[i] = 1 + (lrand48() & 0x3fffffff) ;
-   if (sp[P_REORDER] == 2)
+   if (sp[P_REORDER] == 3)
       for (int i=1; i<1<<width; i++)
          gcount[i] = 1 + gcount[i & (i - 1)] ;
-   for (int row2=0; row2<(1<<width); row2++)
-      makeRow(0, row2) ;
+   int row1limit = 1 ;
+   if (sp[P_REORDER] == 1) // normal order; need gcounts; do all
+      row1limit = 1<<width ;
+   for (int row1=0; row1<row1limit; row1++)
+      for (int row2=0; row2<1<<width; row2++)
+         makeRow(row1, row2, sp[P_REORDER] != 1) ;
+   if (sp[P_REORDER] == 1)
+      for (int row1=0; row1<1<<width; row1++)
+         for (int row2=0; row2<1<<width; row2++)
+            sortall(getoffset(row1, row2)) ;
 }
 uint16_t *bbuf ;
 int bbuf_left = 0 ;
@@ -263,7 +275,7 @@ uint16_t *bmalloc(int siz) {
    bbuf_left -= siz ;
    return r ;
 }
-uint16_t *makeRow(int row1, int row2) {
+uint16_t *makeRow(int row1, int row2, int dosort) {
    uint32_t rows23 = row2 << width ;
    int good = 0 ;
    int *gWork2 = gWork + (1 << width) ;
@@ -292,9 +304,12 @@ uint16_t *makeRow(int row1, int row2) {
       int row4 = gWork[row3] ;
       row[--row[row4]] = gWork2[row3] ;
    }
-   if(sp[P_REORDER])
-      for (int row3 = 0 ; row3 < 1 << width; row3++)
-         sortRows(row + row[row3], row[row3+1]-row[row3]) ;
+   if(dosort && sp[P_REORDER])
+      sortall(row) ;
+   printf("R") ;
+   for (int i=0; i<1+(1<<width)+good; i++)
+      printf(" %d", row[i]) ;
+   printf("\n") ;
    return row ;
 }
 
