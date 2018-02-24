@@ -204,8 +204,12 @@ void sortRows(uint16_t *row, uint32_t totalRows) {
       row[j+1] = t;
    }
 }
+uint16_t *makeRow(int row1, int row2) ;
 uint16_t *getoffset(int row12) {
-   return gInd3[row12] ;
+   uint16_t *r = gInd3[row12] ;
+   if (r == 0)
+      r = makeRow(row12 >> width, row12 & ((1 << width) - 1)) ;
+   return r ;
 }
 uint16_t *getoffset(int row1, int row2) {
    return getoffset((row1 << width) + row2) ;
@@ -219,65 +223,54 @@ int getcount(int row1, int row2, int row3) {
    uint16_t *row = getoffset(row1, row2) ;
    return row[row3+1] - row[row3] ;
 }
-void makeTables(){
-   printf("\nBuilding lookup tables... ");
-   fflush(stdout) ;
+int *gWork ;
+void makeTables() {
    gInd3 = (uint16_t **)malloc(sizeof(*gInd3)*(1LL<<(width*2))) ;
    ev2Rows = (uint16_t *)malloc(sizeof(*ev2Rows) * (1LL << (width * 2)));
    gcount = (uint32_t *)malloc(sizeof(*gcount) * (1LL << width));
    uint32_t i;
    for(i = 0; i < 1 << width; ++i) gcount[i] = 0;
-   int *gWork = (int *)malloc(2 * sizeof(int) << width) ;
+   gWork = (int *)malloc(2 * sizeof(int) << width) ;
+   gcount[0] = 0;
+   if (sp[P_REORDER] == 2)
+      for (int i=1; i<1<<width; i++)
+         gcount[i] = 1 + (lrand48() & 0x3fffffff) ;
+   for (int row2=0; row2<(1<<width); row2++)
+      makeRow(0, row2) ;
+}
+uint16_t *makeRow(int row1, int row2) {
+   uint32_t rows23 = row2 << width ;
+   int good = 0 ;
    int *gWork2 = gWork + (1 << width) ;
-   uint32_t rows123 = 0 ;
-   for(int row1 = 0; row1 < 1 << width; row1++) {
-      for(int row2 = 0; row2 < 1 << width; row2++) {
-         int good = 0 ;
-         for (int row3 = 0; row3 < 1<<width; row3++) {
-            int row4 = evolveRow(row1, row2, row3) ;
-            if (row1 == 0) ev2Rows[rows123] = row4 ;
-            rows123++ ;
-            if (row4 < 0)
-               continue ;
-            gcount[row4]++ ;
-            gWork2[good] = row3 ;
-            gWork[good++] = row4 ;
-         }
- printf("Alloc %d\n", 1+(1<<width)+good) ;
-         uint16_t *gindW = (uint16_t *)malloc(sizeof(uint16_t)*(1+(1<<width)+good)) ;
-         gInd3[(row1<<width)+row2] = gindW ;
-         for (int row3=0; row3 < 1<<width; row3++)
-            gindW[row3] = 0 ;
-         gindW[0] = 1 + (1 << width) ;
-         for (int row3=0; row3 < good; row3++)
-            gindW[gWork[row3]]++ ;
-         gindW[1<<width] = 0 ;
-         for (int row3=0; row3 < (1<<width); row3++)
-            gindW[row3+1] += gindW[row3] ;
-         for (int row3=0; row3<good; row3++) {
-            int row4 = gWork[row3] ;
-            gindW[--gindW[row4]] = gWork2[row3] ;
-         }
-      }
+   for (int row3 = 0; row3 < 1<<width; row3++) {
+      int row4 = evolveRow(row1, row2, row3) ;
+      if (row1 == 0) ev2Rows[rows23] = row4 ;
+      rows23++ ;
+      if (row4 < 0)
+         continue ;
+      if (sp[P_REORDER] == 1)
+         gcount[row4]++ ;
+      gWork2[good] = row3 ;
+      gWork[good++] = row4 ;
    }
-   free(gWork) ;
-   printf("Lookup tables built.\n");
-   
-   if(sp[P_REORDER]){
-      gcount[0] = 0;
-      if (sp[P_REORDER] == 2)
-         for (int i=1; i<1<<width; i++)
-            gcount[i] = 1 + (lrand48() & 0x3fffffff) ;
-      printf("Sorting lookup table..... ");
-      fflush(stdout) ;
-      for (int rows12 = 0; rows12 < 1 << (2 * width); rows12++) {
-         uint16_t *row = getoffset(rows12) ;
-         for (int row3 = 0 ; row3 < 1 << width; row3++)
-            sortRows(row + row[row3], row[row3+1]-row[row3]) ;
-      }
-      printf("Lookup table sorted.\n");
+   uint16_t *row = (uint16_t *)malloc(sizeof(uint16_t)*(1+(1<<width)+good)) ;
+   gInd3[(row1<<width)+row2] = row ;
+   for (int row3=0; row3 < 1<<width; row3++)
+      row[row3] = 0 ;
+   row[0] = 1 + (1 << width) ;
+   for (int row3=0; row3 < good; row3++)
+      row[gWork[row3]]++ ;
+   row[1<<width] = 0 ;
+   for (int row3=0; row3 < (1<<width); row3++)
+      row[row3+1] += row[row3] ;
+   for (int row3=0; row3<good; row3++) {
+      int row4 = gWork[row3] ;
+      row[--row[row4]] = gWork2[row3] ;
    }
-   free(gcount);
+   if(sp[P_REORDER])
+      for (int row3 = 0 ; row3 < 1 << width; row3++)
+         sortRows(row + row[row3], row[row3+1]-row[row3]) ;
+   return row ;
 }
 
 void printInfo(int currentDepth, unsigned long long numCalcs, double runTime){
