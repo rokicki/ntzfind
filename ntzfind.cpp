@@ -227,11 +227,14 @@ int getcount(int row1, int row2, int row3) {
 }
 int *gWork ;
 void sortall(uint16_t *row) {
+   gcount[0] = 0 ;
    for (int row3 = 0 ; row3 < 1 << width; row3++)
       sortRows(row + row[row3], row[row3+1]-row[row3]) ;
 }
 void makeTables() {
    gInd3 = (uint16_t **)malloc(sizeof(*gInd3)*(1LL<<(width*2))) ;
+   for (int i=0; i<1<<(2*width); i++)
+      gInd3[i] = 0 ;
    ev2Rows = (uint16_t *)malloc(sizeof(*ev2Rows) * (1LL << (width * 2)));
    gcount = (uint32_t *)malloc(sizeof(*gcount) * (1LL << width));
    memusage = (sizeof(*gInd3)+sizeof(*ev2Rows)) << (width*2) ;
