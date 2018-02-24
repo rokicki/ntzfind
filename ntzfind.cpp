@@ -579,6 +579,7 @@ void search(){
                printf("Spaceship found. (%d)\n\n",totalShips);
                printInfo(currRow,calcs,get_cpu_time() - ms);
                --sp[P_NUM_SHIPS];
+               fflush(stdout) ;
             }
             ++shipNum;
             if(sp[P_NUM_SHIPS] == 0){
