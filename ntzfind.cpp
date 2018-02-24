@@ -1,5 +1,5 @@
-/* ntzfind 2.0 (horizontal shift not included in this version)
-** A spaceship search program by "zdr" with modifications by Matthias Merzenich and Aidan Pierce
+/* ntzfind 3.0 (horizontal shift not included in this version)
+** A spaceship search program by "zdr" with modifications by Matthias Merzenich and Aidan Pierce and Tomas Rokicki
 **
 ** Warning: this program uses a lot of memory (especially for wide searches).
 */
@@ -10,7 +10,7 @@
 #include <string.h>
 #include "nttable.c"
 
-#define BANNER "ntzfind 2.0 by \"zdr\", Matthias Merzenich, and Aidan Pierce, 29 November 2017"
+#define BANNER "ntzfind 3.0 by \"zdr\", Matthias Merzenich, Aidan Pierce, and Tomas Rokicki, 24 February 2018"
 #define FILEVERSION ((unsigned long) 2016122101)  //yyyymmddnn, same as last qfind release (differs from the above)
 
 #define MAXPERIOD 30
@@ -469,6 +469,8 @@ FILE * openDumpFile(){
 }
 
 void dumpState(int v){ // v = rowNum
+    printf("Dumping state not supported at the moment.\n") ;
+    exit(10) ;
     FILE * fp;
     int i;
     dumpFlag = DUMPFAILURE;
@@ -630,6 +632,8 @@ long long loadUL(FILE *fp){
 }
 
 void loadState(char * cmd, char * file){
+   printf("Loading state not supported at the moment.\n") ;
+   exit(10) ;
    FILE * fp;
    int i;
    
