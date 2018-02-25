@@ -310,7 +310,6 @@ uint16_t *makeRow(int row1, int row2, int dosort) {
       gWork[good++] = row4 ;
    }
    uint16_t *row = bmalloc((1+(1<<width)+good)) ;
-   gInd3[(row1<<width)+row2] = row ;
    for (int row3=0; row3 < 1<<width; row3++)
       row[row3] = 0 ;
    row[0] = 1 + (1 << width) ;
@@ -339,6 +338,7 @@ uint16_t *makeRow(int row1, int row2, int dosort) {
       }
       h = (h + 1) & ((2 << (2 * width)) - 1) ;
    }
+   gInd3[(row1<<width)+row2] = row ;
 /*
  *   For debugging:
  *
