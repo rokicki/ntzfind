@@ -430,11 +430,12 @@ int lookAhead(int a){
                            row13, row12, riStart23, numRows23) ;
             if(!numRows23) continue;
             
-            for(ri22 = 0; ri22 < numRows22; ++ri22){
-               row22 = riStart22[ri22] ;
-               for(ri23 = 0; ri23 < numRows23; ++ri23){
-                  row23 = riStart23[ri23] ;
-                  if (getcount(row13, row23, row22))
+            for(ri23 = 0; ri23 < numRows23; ++ri23){
+               row23 = riStart23[ri23] ;
+               uint16_t *p = getoffset(row13, row23) ;
+               for(ri22 = 0; ri22 < numRows22; ++ri22){
+                  row22 = riStart22[ri22] ;
+                  if (p[row22+1]!=p[row22])
                      return 1 ;
                }
             }
