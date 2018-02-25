@@ -192,15 +192,7 @@ int evolveRow(int row1, int row2, int row3){
    return row4;
 }
 void evolveRowSet(int row1, int row2, int row3, int row4, int at, int *p){
-   if (at == 0) { // add a value to the row
-      if ((row4 >> (width + 1)) ||
-          (sp[P_SYMMETRY] == SYM_ASYM &&
-            evolveBit(row1<<1, row2<<1, row3<<1, 0)))
-         row4 = -1 ;
-      else
-         row4 >>= 1 ;
-      p[row3>>1] = row4 ;
-   } else if (at == 1) { // set least significant bit based on symmetry
+   if (at == 1) { // set least significant bit based on symmetry
       if (sp[P_SYMMETRY] == SYM_ODD) {
          row1 += (row1 >> 2) & 1 ;
          row2 += (row2 >> 2) & 1 ;
@@ -210,8 +202,12 @@ void evolveRowSet(int row1, int row2, int row3, int row4, int at, int *p){
          row2 += (row2 >> 1) & 1 ;
          row3 += (row3 >> 1) & 1 ;
       }
-      evolveRowSet(row1, row2, row3,
-                   row4 + (evolveBit(row1, row2, row3, at-1) << at), at-1, p) ;
+      row4 = (row4 >> 1) + evolveBit(row1, row2, row3, 0) ;
+      if ((row4 >> width) ||
+          (sp[P_SYMMETRY] == SYM_ASYM &&
+            evolveBit(row1<<1, row2<<1, row3<<1, 0)))
+         row4 = -1 ;
+      p[row3>>1] = row4 ;
    } else {
       for (int v=0; v<2; v++) {
          evolveRowSet(row1, row2, row3,
