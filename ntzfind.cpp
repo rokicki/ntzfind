@@ -71,7 +71,7 @@ int sp[NUM_PARAMS];
 uint16_t **pInd ;
 uint16_t **gInd3 ;
 int *pRemain;
-uint32_t *gcount;
+uint32_t *gcount ;
 uint16_t *gRows, *pRows;
 uint16_t *ev2Rows;               // lookup table that gives the evolution of a row with a blank row above and a specified row below
 int *lastNonempty;
@@ -187,13 +187,20 @@ int evolveBit(int row1, int row2, int row3, int bshift) {
       (( row3       >> bshift) &   07)] ;
 }
 
+int evolveBit(int row1, int row2, int row3) {
+   return nttable2[
+      ((row1 << 6) & 0700) +
+      ((row2 << 3) &  070) +
+      ( row3       &   07)] ;
+}
+
 int evolveRow(int row1, int row2, int row3){
    int row4;
    int row1_s,row2_s,row3_s;
    int j,s = 0;
    if(sp[P_SYMMETRY] == SYM_ODD) s = 1;
    if(evolveBit(row1, row2, row3, width - 1)) return -1;
-   if(sp[P_SYMMETRY] == SYM_ASYM && evolveBit(row1 << 2, row2 << 2, row3 << 2, 0)) return -1;
+   if(sp[P_SYMMETRY] == SYM_ASYM && evolveBit(row1 << 2, row2 << 2, row3 << 2)) return -1;
    if(sp[P_SYMMETRY] == SYM_ODD || sp[P_SYMMETRY] == SYM_EVEN){
       row1_s = (row1 << 1) + ((row1 >> s) & 1);
       row2_s = (row2 << 1) + ((row2 >> s) & 1);
@@ -204,7 +211,7 @@ int evolveRow(int row1, int row2, int row3){
       row2_s = (row2 << 1);
       row3_s = (row3 << 1);
    }
-   row4 = evolveBit(row1_s, row2_s, row3_s, 0);
+   row4 = evolveBit(row1_s, row2_s, row3_s);
    for(j = 1; j < width; j++)row4 += evolveBit(row1, row2, row3, j - 1) << j;
    return row4;
 }
@@ -224,7 +231,7 @@ int evolveRowLow(int row1, int row2, int row3, int bits){
    int row1_s,row2_s,row3_s;
    int j,s = 0;
    if(sp[P_SYMMETRY] == SYM_ODD) s = 1;
-   if(sp[P_SYMMETRY] == SYM_ASYM && evolveBit(row1 << 2, row2 << 2, row3 << 2, 0)) return -1;
+   if(sp[P_SYMMETRY] == SYM_ASYM && evolveBit(row1 << 2, row2 << 2, row3 << 2)) return -1;
    if(sp[P_SYMMETRY] == SYM_ODD || sp[P_SYMMETRY] == SYM_EVEN){
       row1_s = (row1 << 1) + ((row1 >> s) & 1);
       row2_s = (row2 << 1) + ((row2 >> s) & 1);
@@ -235,7 +242,7 @@ int evolveRowLow(int row1, int row2, int row3, int bits){
       row2_s = (row2 << 1);
       row3_s = (row3 << 1);
    }
-   row4 = evolveBit(row1_s, row2_s, row3_s, 0);
+   row4 = evolveBit(row1_s, row2_s, row3_s);
    for(j = 1; j < bits; j++)row4 += evolveBit(row1, row2, row3, j - 1) << j;
    return row4;
 }
@@ -254,11 +261,11 @@ void sortRows(uint16_t *row, uint32_t totalRows) {
       row[j+1] = t;
    }
 }
-uint16_t *makeRow(int row1, int row2, int doSort) ;
+uint16_t *makeRow(int row1, int row2) ;
 uint16_t *getoffset(int row12) {
    uint16_t *r = gInd3[row12] ;
    if (r == 0)
-      r = makeRow(row12 >> width, row12 & ((1 << width) - 1), 1) ;
+      r = makeRow(row12 >> width, row12 & ((1 << width) - 1)) ;
    return r ;
 }
 uint16_t *getoffset(int row1, int row2) {
@@ -274,12 +281,9 @@ int getcount(int row1, int row2, int row3) {
    return row[row3+1] - row[row3] ;
 }
 int *gWork ;
-void sortall(uint16_t *row) {
-   gcount[0] = 0 ;
-   for (int row3 = 0 ; row3 < 1 << width; row3++)
-      sortRows(row + row[row3], row[row3+1]-row[row3]) ;
-}
 int *rowHash ;
+uint16_t *valorder ;
+void genStatCounts() ;
 void makeTables() {
    gInd3 = (uint16_t **)malloc(sizeof(*gInd3)*(1LL<<(width*2))) ;
    rowHash = (int *)malloc(sizeof(int)*(2LL<<(width*2))) ;
@@ -291,27 +295,27 @@ void makeTables() {
    gcount = (uint32_t *)malloc(sizeof(*gcount) * (1LL << width));
    memusage = (sizeof(*gInd3)+sizeof(*ev2Rows)+2*sizeof(int)) << (width*2) ;
    uint32_t i;
-   for(i = 0; i < 1 << width; ++i) gcount[i] = 0;
+   for(i = 0; i < 1 << width; ++i) gcount[i] = 0 ;
    for (int i=0; i<1<<(2*width); i++)
       ev2Rows[i] = 0 ;
-   gWork = (int *)malloc(2 * sizeof(int) << width) ;
-   gcount[0] = 0;
+   gWork = (int *)malloc(3 * sizeof(int) << width) ;
+   if (sp[P_REORDER] == 1)
+      genStatCounts() ;
    if (sp[P_REORDER] == 2)
       for (int i=1; i<1<<width; i++)
          gcount[i] = 1 + (lrand48() & 0x3fffffff) ;
    if (sp[P_REORDER] == 3)
       for (int i=1; i<1<<width; i++)
          gcount[i] = 1 + gcount[i & (i - 1)] ;
-   int row1limit = 1 ;
-   if (sp[P_REORDER] == 1) // normal order; need gcounts; do all
-      row1limit = 1<<width ;
-   for (int row1=0; row1<row1limit; row1++)
-      for (int row2=0; row2<1<<width; row2++)
-         makeRow(row1, row2, sp[P_REORDER] != 1) ;
-   if (sp[P_REORDER] == 1)
-      for (int row1=0; row1<1<<width; row1++)
-         for (int row2=0; row2<1<<width; row2++)
-            sortall(getoffset(row1, row2)) ;
+   gcount[0] = 0 ;
+   valorder = (uint16_t *)malloc(sizeof(uint16_t) << width) ;
+   for (int i=0; i<1<<width; i++)
+      valorder[i] = (1<<width)-1-i ;
+   if (sp[P_REORDER] != 0)
+      sortRows(valorder, 1<<width) ;
+ for (int row1=0; row1<1<<width; row1++)
+   for (int row2=0; row2<1<<width; row2++)
+      makeRow(row1, row2) ;
 }
 uint16_t *bbuf ;
 int bbuf_left = 0 ;
@@ -342,10 +346,11 @@ unsigned int hashRow(uint16_t *row, int siz) {
       h = h * 3 + row[i] ;
    return h ;
 }
-uint16_t *makeRow(int row1, int row2, int dosort) {
+uint16_t *makeRow(int row1, int row2) {
    uint32_t rows23 = row2 << width ;
    int good = 0 ;
    int *gWork2 = gWork + (1 << width) ;
+   int *gWork3 = gWork2 + (1 << width) ;
    if (width < 4) {
       for (int row3=0; row3<1<<width; row3++)
          gWork[row3] = evolveRow(row1, row2, row3) ;
@@ -360,17 +365,17 @@ uint16_t *makeRow(int row1, int row2, int dosort) {
          gWork2[lowcount+(row3>>hishift)] =
                         evolveRowHigh(row1, row2, row3, hibitcount-1) ;
       for (int row3=0; row3<1<<width; row3++)
-         gWork[row3] = gWork2[row3 & ((1<<lowbitcount) - 1)] |
-                       gWork2[lowcount+(row3 >> hishift)] ;
+         gWork3[row3] = gWork2[row3 & ((1<<lowbitcount) - 1)] |
+                        gWork2[lowcount+(row3 >> hishift)] ;
    }
-   for (int row3 = 0; row3 < 1<<width; row3++, rows23++) {
-      int row4 = gWork[row3] ;
+   for (int row3i = 0; row3i < 1<<width; row3i++) {
+      int row3 = valorder[row3i] ;
+      int row23 = (row2 << width) + row3 ;
+      int row4 = gWork3[row3] ;
       if (row4 < 0)
          continue ;
       if (row1 == 0)
          ev2Rows[rows23] = row4 ;
-      if (sp[P_REORDER] == 1)
-         gcount[row4]++ ;
       gWork2[good] = row3 ;
       gWork[good++] = row4 ;
    }
@@ -383,12 +388,10 @@ uint16_t *makeRow(int row1, int row2, int dosort) {
    row[1<<width] = 0 ;
    for (int row3=0; row3 < (1<<width); row3++)
       row[row3+1] += row[row3] ;
-   for (int row3=0; row3<good; row3++) {
+   for (int row3=good-1; row3>=0; row3--) {
       int row4 = gWork[row3] ;
       row[--row[row4]] = gWork2[row3] ;
    }
-   if(dosort && sp[P_REORDER])
-      sortall(row) ;
    unsigned int h = hashRow(row, 1+(1<<width)+good) ;
    h &= (2 << (2 * width)) - 1 ;
    while (1) {
@@ -406,13 +409,67 @@ uint16_t *makeRow(int row1, int row2, int dosort) {
    gInd3[(row1<<width)+row2] = row ;
 /*
  *   For debugging:
- *
+ */
    printf("R") ;
    for (int i=0; i<1+(1<<width)+good; i++)
       printf(" %d", row[i]) ;
    printf("\n") ;
- */
+ /* */
    return row ;
+}
+
+/*
+ *   We calculate the stats using a 2 * 64 << width array.  We use a
+ *   leading 1 to separate them.  Index 1 aaa bb cc dd represents
+ *   the count for a result of aaa when the last two bits of row1, row2,
+ *   and row3 were bb, cc, and dd, respectively.  We have to manage
+ *   the edge conditions appropriately.
+ */
+void genStatCounts() {
+   int *cnt = (int*)malloc((128 * sizeof(int)) << width) ;
+   for (int i=0; i<128<<width; i++)
+      cnt[i] = 0 ;
+   int s = 0 ;
+   if (sp[P_SYMMETRY] == SYM_ODD)
+      s = 2 ;
+   else if (sp[P_SYMMETRY] == SYM_EVEN)
+      s = 1 ;
+   else
+      s = width + 2 ;
+   // left side: never permit generation left of row4
+   for (int row1=0; row1<2; row1++)
+      for (int row2=0; row2<2; row2++)
+         for (int row3=0; row3<2; row3++)
+            if (evolveBit(row1, row2, row3) == 0)
+               cnt[(1<<6) + (row1 << 4) + (row2 << 2) + row3]++ ;
+   for (int nb=0; nb<width; nb++) {
+      for (int row1=0; row1<8; row1++)
+         for (int row2=0; row2<8; row2++)
+            for (int row3=0; row3<8; row3++) {
+               if (nb == width-1)
+                  if ((((row1 >> s) ^ row1) & 1) ||
+                      (((row2 >> s) ^ row2) & 1) ||
+                      (((row3 >> s) ^ row3) & 1))
+                     continue ;
+               int row4b = evolveBit(row1, row2, row3) ;
+               for (int row4=0; row4<1<<nb; row4++)
+                  cnt[(((((1<<nb) + row4) << 1) + row4b) << 6) +
+                    ((row1 & 3) << 4) + ((row2 & 3) << 2) + (row3 & 3)] +=
+                     cnt[(((1<<nb) + row4) << 6) +
+                       ((row1 >> 1) << 4) + ((row2 >> 1) << 2) + (row3 >> 1)] ;
+            }
+   }
+   // right side; check left, and accumulate into gcount
+   for (int row1=0; row1<4; row1++)
+      for (int row2=0; row2<4; row2++)
+         for (int row3=0; row3<4; row3++)
+            if (sp[P_SYMMETRY] != SYM_ASYM ||
+                evolveBit(row1<<1, row2<<1, row3<<1) == 0)
+               for (int row4=0; row4<1<<width; row4++)
+                  gcount[row4] +=
+                     cnt[(((1<<width) + row4) << 6) +
+                       (row1 << 4) + (row2 << 2) + row3] ;
+   free(cnt) ;
 }
 
 void printInfo(int currentDepth, unsigned long long numCalcs, double runTime){
