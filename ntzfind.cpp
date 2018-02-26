@@ -163,11 +163,28 @@ void makeEqRows(int maxFactor, int a){
    }
 }
 
-int evolveBit(int row1, int row2, int row3, int bshift){
+char nttable2[512] ;
+
+int slowEvolveBit(int row1, int row2, int row3, int bshift){
    return nttable[(((row2>>bshift) & 2)<<7) | (((row1>>bshift) & 2)<<6)
                 | (((row1>>bshift) & 4)<<4) | (((row2>>bshift) & 4)<<3)
                 | (((row3>>bshift) & 7)<<2) | (((row2>>bshift) & 1)<<1)
                 |  ((row1>>bshift) & 1)<<0];
+}
+
+void fasterTable() {
+   int p = 0 ;
+   for (int row1=0; row1<8; row1++)
+      for (int row2=0; row2<8; row2++)
+         for (int row3=0; row3<8; row3++)
+            nttable2[p++] = slowEvolveBit(row1, row2, row3, 0) ;
+}
+
+int evolveBit(int row1, int row2, int row3, int bshift) {
+   return nttable2[
+      (((row1 << 6) >> bshift) & 0700) +
+      (((row2 << 3) >> bshift) &  070) +
+      (( row3       >> bshift) &   07)] ;
 }
 
 int evolveRow(int row1, int row2, int row3){
@@ -191,17 +208,9 @@ int evolveRow(int row1, int row2, int row3){
    for(j = 1; j < width; j++)row4 += evolveBit(row1, row2, row3, j - 1) << j;
    return row4;
 }
-void evolveRowSet(int row1, int row2, int row3, int row4, int at, int *p){
+void evolveRowSet(int row1, int row2, int row3, int row4, int at, int *p, int s){
    if (at == 1) { // set least significant bit based on symmetry
-      if (sp[P_SYMMETRY] == SYM_ODD) {
-         row1 += (row1 >> 2) & 1 ;
-         row2 += (row2 >> 2) & 1 ;
-         row3 += (row3 >> 2) & 1 ;
-      } else if (sp[P_SYMMETRY] == SYM_EVEN) {
-         row1 += (row1 >> 1) & 1 ;
-         row2 += (row2 >> 1) & 1 ;
-         row3 += (row3 >> 1) & 1 ;
-      }
+      row3 += (row3 >> s) & 1 ;
       row4 = (row4 >> 1) + evolveBit(row1, row2, row3, 0) ;
       if ((row4 >> width) ||
           (sp[P_SYMMETRY] == SYM_ASYM &&
@@ -211,13 +220,25 @@ void evolveRowSet(int row1, int row2, int row3, int row4, int at, int *p){
    } else {
       for (int v=0; v<2; v++) {
          evolveRowSet(row1, row2, row3,
-                    row4 + (evolveBit(row1, row2, row3, at-1) << at), at-1, p) ;
+                row4 + (evolveBit(row1, row2, row3, at-1) << at), at-1, p, s) ;
          row3 += (1 << (at-1)) ;
       }
    }
 }
 void evolveRowSet(int row1, int row2, int *p){
-   evolveRowSet(row1<<1, row2<<1, 0, 0, width+1, p) ;
+   row1 <<= 1 ;
+   row2 <<= 1 ;
+   int s = width + 3 ;
+   if (sp[P_SYMMETRY] == SYM_ODD) {
+      row1 += (row1 >> 2) & 1 ;
+      row2 += (row2 >> 2) & 1 ;
+      s = 2 ;
+   } else if (sp[P_SYMMETRY] == SYM_EVEN) {
+      row1 += (row1 >> 1) & 1 ;
+      row2 += (row2 >> 1) & 1 ;
+      s = 1 ;
+   }
+   evolveRowSet(row1, row2, 0, 0, width+1, p, s) ;
 }
 
 void sortRows(uint16_t *row, uint32_t totalRows) {
@@ -863,6 +884,7 @@ int main(int argc, char *argv[]){
    for (int i=0; i<argc; i++)
       printf(" %s", argv[i]) ;
    printf("\n") ;
+   fasterTable() ;
    sp[P_RULE] = 6152;         //first 9 bits represent births; next 9 bits represent survivals
    sp[P_WIDTH] = 0;
    sp[P_PERIOD] = 0;
