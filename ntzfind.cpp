@@ -208,39 +208,36 @@ int evolveRow(int row1, int row2, int row3){
    for(j = 1; j < width; j++)row4 += evolveBit(row1, row2, row3, j - 1) << j;
    return row4;
 }
-void evolveRowSet(int row1, int row2, int row3, int row4, int at, int *p, int s, int omit){
-   if (at == 1) { // set least significant bit based on symmetry
-      row3 += (row3 >> s) & 1 ;
-      row4 = (row4 >> 1) + evolveBit(row1, row2, row3, 0) ;
-      if ((row4 >> width) || ((omit >> ((row3 >> 1) & 1)) & 1))
-         row4 = -1 ;
-      p[row3>>1] = row4 ;
-   } else {
-      for (int v=0; v<2; v++) {
-         evolveRowSet(row1, row2, row3,
-          row4 + (evolveBit(row1, row2, row3, at-1) << at), at-1, p, s, omit) ;
-         row3 += (1 << (at-1)) ;
-      }
-   }
+int evolveRowHigh(int row1, int row2, int row3, int bits){
+   int row4=0;
+   int row1_s,row2_s,row3_s;
+   int j ;
+   if(evolveBit(row1, row2, row3, width - 1)) return -1;
+   row1_s = (row1 << 1);
+   row2_s = (row2 << 1);
+   row3_s = (row3 << 1);
+   for(j = width-bits; j < width; j++)row4 += evolveBit(row1, row2, row3, j - 1) << j;
+   return row4;
 }
-void evolveRowSet(int row1, int row2, int *p){
-   int omit = 0 ;
-   if (sp[P_SYMMETRY] == SYM_ASYM) 
-      omit = evolveBit(row1 << 2, row2 << 2, 0, 0) +
-             2 * evolveBit(row1 << 2, row2 << 2, 1, 0) ;
-   row1 <<= 1 ;
-   row2 <<= 1 ;
-   int s = width + 3 ;
-   if (sp[P_SYMMETRY] == SYM_ODD) {
-      row1 += (row1 >> 2) & 1 ;
-      row2 += (row2 >> 2) & 1 ;
-      s = 2 ;
-   } else if (sp[P_SYMMETRY] == SYM_EVEN) {
-      row1 += (row1 >> 1) & 1 ;
-      row2 += (row2 >> 1) & 1 ;
-      s = 1 ;
+int evolveRowLow(int row1, int row2, int row3, int bits){
+   int row4;
+   int row1_s,row2_s,row3_s;
+   int j,s = 0;
+   if(sp[P_SYMMETRY] == SYM_ODD) s = 1;
+   if(sp[P_SYMMETRY] == SYM_ASYM && evolveBit(row1 << 2, row2 << 2, row3 << 2, 0)) return -1;
+   if(sp[P_SYMMETRY] == SYM_ODD || sp[P_SYMMETRY] == SYM_EVEN){
+      row1_s = (row1 << 1) + ((row1 >> s) & 1);
+      row2_s = (row2 << 1) + ((row2 >> s) & 1);
+      row3_s = (row3 << 1) + ((row3 >> s) & 1);
    }
-   evolveRowSet(row1, row2, 0, 0, width+1, p, s, omit) ;
+   else{
+      row1_s = (row1 << 1);
+      row2_s = (row2 << 1);
+      row3_s = (row3 << 1);
+   }
+   row4 = evolveBit(row1_s, row2_s, row3_s, 0);
+   for(j = 1; j < bits; j++)row4 += evolveBit(row1, row2, row3, j - 1) << j;
+   return row4;
 }
 
 void sortRows(uint16_t *row, uint32_t totalRows) {
@@ -349,7 +346,23 @@ uint16_t *makeRow(int row1, int row2, int dosort) {
    uint32_t rows23 = row2 << width ;
    int good = 0 ;
    int *gWork2 = gWork + (1 << width) ;
-   evolveRowSet(row1, row2, gWork) ;
+   if (width < 4) {
+      for (int row3=0; row3<1<<width; row3++)
+         gWork[row3] = evolveRow(row1, row2, row3) ;
+   } else {
+      int lowbitcount = (width >> 1) + 1 ;
+      int hibitcount = ((width + 1) >> 1) + 1 ;
+      int hishift = lowbitcount - 2 ;
+      int lowcount = 1 << lowbitcount ;
+      for (int row3=0; row3<1<<lowbitcount; row3++)
+         gWork2[row3] = evolveRowLow(row1, row2, row3, lowbitcount-1) ;
+      for (int row3=0; row3<1<<width; row3 += 1<<hishift)
+         gWork2[lowcount+(row3>>hishift)] =
+                        evolveRowHigh(row1, row2, row3, hibitcount-1) ;
+      for (int row3=0; row3<1<<width; row3++)
+         gWork[row3] = gWork2[row3 & ((1<<lowbitcount) - 1)] |
+                       gWork2[lowcount+(row3 >> hishift)] ;
+   }
    for (int row3 = 0; row3 < 1<<width; row3++, rows23++) {
       int row4 = gWork[row3] ;
       if (row4 < 0)
