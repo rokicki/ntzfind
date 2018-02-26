@@ -346,7 +346,6 @@ unsigned int hashRow(uint16_t *row, int siz) {
    return h ;
 }
 uint16_t *makeRow(int row1, int row2) {
-   uint32_t rows23 = row2 << width ;
    int good = 0 ;
    int *gWork2 = gWork + (1 << width) ;
    int *gWork3 = gWork2 + (1 << width) ;
@@ -374,7 +373,7 @@ uint16_t *makeRow(int row1, int row2) {
       if (row4 < 0)
          continue ;
       if (row1 == 0)
-         ev2Rows[rows23] = row4 ;
+         ev2Rows[row23] = row4 ;
       gWork2[good] = row3 ;
       gWork[good++] = row4 ;
    }
