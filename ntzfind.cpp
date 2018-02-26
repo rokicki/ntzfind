@@ -518,7 +518,29 @@ void printPattern(){
    printf("%s", buf);
    fflush(stdout);
 }
-
+const int CACHESIZE = 32768 ;
+struct cacheentry {
+   uint16_t *p1, *p2, *p3, a, b, r ;
+} cache[CACHESIZE] ;
+int getkey(uint16_t *p1, uint16_t *p2, uint16_t *p3, uint16_t a, uint16_t b) {
+   unsigned long long h = (unsigned long long)p1 +
+      17 * (unsigned long long)p2 + 257 * (unsigned long long)p3 +
+      513 * a + 2049 * b ;
+   h = h + (h >> 15) ;
+   h &= (CACHESIZE-1) ;
+   struct cacheentry &ce = cache[h] ;
+   if (ce.p1 == p1 && ce.p2 == p2 && ce.p3 == p3 && ce.a == a && ce.b == b)
+      return -2 + (int)ce.r ;
+   ce.p1 = p1 ;
+   ce.p2 = p2 ;
+   ce.p3 = p3 ;
+   ce.a = a ;
+   ce.b = b ;
+   return h ;
+}
+void setkey(int h, int v) {
+   cache[h].r = v ;
+}
 int lookAhead(int a){
    int ri11, ri12, ri13, ri22, ri23;  //indices: first number represents vertical offset, second number represents generational offset
    uint16_t *riStart11, *riStart12, *riStart13, *riStart22, *riStart23;
@@ -542,6 +564,10 @@ int lookAhead(int a){
                      pRows[a - tripleOff[phase]],
                      pRows[a - doubleOff[phase]], riStart13, numRows13) ;
    }
+   int k = getkey(riStart11, riStart12, riStart13, pRows[a-doubleOff[phase]],
+                  pRows[a-tripleOff[phase]]) ;
+   if (k < 0)
+      return k+2 ;
    for(ri11 = 0; ri11 < numRows11; ++ri11){
       row11 = riStart11[ri11];
       for(ri12 = 0; ri12 < numRows12; ++ri12){
@@ -561,13 +587,16 @@ int lookAhead(int a){
                uint16_t *p = getoffset(row13, row23) ;
                for(ri22 = 0; ri22 < numRows22; ++ri22){
                   row22 = riStart22[ri22] ;
-                  if (p[row22+1]!=p[row22])
+                  if (p[row22+1]!=p[row22]) {
+                     setkey(k, 1) ;
                      return 1 ;
+                  }
                }
             }
          }
       }
    }
+   setkey(k, 0) ;
    return 0;
 }
 
