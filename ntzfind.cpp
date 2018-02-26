@@ -208,24 +208,26 @@ int evolveRow(int row1, int row2, int row3){
    for(j = 1; j < width; j++)row4 += evolveBit(row1, row2, row3, j - 1) << j;
    return row4;
 }
-void evolveRowSet(int row1, int row2, int row3, int row4, int at, int *p, int s){
+void evolveRowSet(int row1, int row2, int row3, int row4, int at, int *p, int s, int omit){
    if (at == 1) { // set least significant bit based on symmetry
       row3 += (row3 >> s) & 1 ;
       row4 = (row4 >> 1) + evolveBit(row1, row2, row3, 0) ;
-      if ((row4 >> width) ||
-          (sp[P_SYMMETRY] == SYM_ASYM &&
-            evolveBit(row1<<1, row2<<1, row3<<1, 0)))
+      if ((row4 >> width) || ((omit >> ((row3 >> 1) & 1)) & 1))
          row4 = -1 ;
       p[row3>>1] = row4 ;
    } else {
       for (int v=0; v<2; v++) {
          evolveRowSet(row1, row2, row3,
-                row4 + (evolveBit(row1, row2, row3, at-1) << at), at-1, p, s) ;
+          row4 + (evolveBit(row1, row2, row3, at-1) << at), at-1, p, s, omit) ;
          row3 += (1 << (at-1)) ;
       }
    }
 }
 void evolveRowSet(int row1, int row2, int *p){
+   int omit = 0 ;
+   if (sp[P_SYMMETRY] == SYM_ASYM) 
+      omit = evolveBit(row1 << 2, row2 << 2, 0, 0) +
+             2 * evolveBit(row1 << 2, row2 << 2, 1, 0) ;
    row1 <<= 1 ;
    row2 <<= 1 ;
    int s = width + 3 ;
@@ -238,7 +240,7 @@ void evolveRowSet(int row1, int row2, int *p){
       row2 += (row2 >> 1) & 1 ;
       s = 1 ;
    }
-   evolveRowSet(row1, row2, 0, 0, width+1, p, s) ;
+   evolveRowSet(row1, row2, 0, 0, width+1, p, s, omit) ;
 }
 
 void sortRows(uint16_t *row, uint32_t totalRows) {
