@@ -313,9 +313,8 @@ void makeTables() {
       valorder[i] = (1<<width)-1-i ;
    if (sp[P_REORDER] != 0)
       sortRows(valorder, 1<<width) ;
- for (int row1=0; row1<1<<width; row1++)
    for (int row2=0; row2<1<<width; row2++)
-      makeRow(row1, row2) ;
+      makeRow(0, row2) ;
 }
 uint16_t *bbuf ;
 int bbuf_left = 0 ;
@@ -409,12 +408,13 @@ uint16_t *makeRow(int row1, int row2) {
    gInd3[(row1<<width)+row2] = row ;
 /*
  *   For debugging:
- */
+ *
    printf("R") ;
    for (int i=0; i<1+(1<<width)+good; i++)
       printf(" %d", row[i]) ;
    printf("\n") ;
- /* */
+   fflush(stdout) ;
+ */
    return row ;
 }
 
