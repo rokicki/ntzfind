@@ -87,6 +87,11 @@ uint16_t fpBitmask = 0;
 
 int phase, fwdOff[MAXPERIOD], backOff[MAXPERIOD], doubleOff[MAXPERIOD], tripleOff[MAXPERIOD];
 
+void error(const char *s) {
+   fprintf(stderr, "%s\n", s) ;
+   exit(10) ;
+}
+
 void makePhases(){
    int i;
    for (i = 0; i < period; i++) backOff[i] = -1;
@@ -828,7 +833,8 @@ void loadInitRows(char * file){
    if (!fp) loadFail();
    
    for(i = 0; i < 2 * period; i++){
-      fscanf(fp,"%s",rowStr);
+      if (fscanf(fp,"%s",rowStr) != 1)
+         error("! early end on file when reading initial rows") ;
       for(j = 0; j < width; j++){
          pRows[i] |= ((rowStr[width - j - 1] == '.') ? 0:1) << j;
       }
