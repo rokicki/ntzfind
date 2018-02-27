@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
-#include "nttable.c"
+#include "tab.cpp"
 
 #define BANNER "ntzfind 3.0 by \"zdr\", Matthias Merzenich, Aidan Pierce, and Tomas Rokicki, 24 February 2018"
 #define FILEVERSION ((unsigned long) 2016122101)  //yyyymmddnn, same as last qfind release (differs from the above)
@@ -19,7 +19,6 @@
 #define DEFAULT_DEPTH_LIMIT 2000
 #define NUM_PARAMS 13
 
-#define P_RULE 0
 #define P_WIDTH 1
 #define P_PERIOD 2
 #define P_OFFSET 3
@@ -37,6 +36,8 @@
 #define SYM_ODD 2
 #define SYM_EVEN 3
 #define SYM_GUTTER 4
+
+const char *rule = "B3/S23" ;
 
 /* get_cpu_time() definition taken from
 ** http://stackoverflow.com/questions/17432502/how-can-i-measure-cpu-time-and-wall-clock-time-on-both-linux-windows/17440673#17440673
@@ -67,6 +68,7 @@ double get_cpu_time(){
 }
 #endif
 
+int nttable[512] ;
 int sp[NUM_PARAMS];
 uint16_t **pInd ;
 uint16_t **gInd3 ;
@@ -81,7 +83,7 @@ long long memlimit = 0x7000000000000000LL ;
 int bc[8] = {0, 1, 1, 2, 1, 2, 2, 3};
 char *buf;
 
-int rule, period, offset, width, rowNum, loadDumpFlag;
+int period, offset, width, rowNum, loadDumpFlag;
 int shipNum, firstFull;
 uint16_t fpBitmask = 0;
 
@@ -820,7 +822,6 @@ void loadState(char * cmd, char * file){
       dumpPeriod = ((long long)1 << sp[P_DUMP]) - 1;
    }
    
-   rule = sp[P_RULE];
    width = sp[P_WIDTH];
    period = sp[P_PERIOD];
    offset = sp[P_OFFSET];
@@ -877,7 +878,6 @@ void initializeSearch(char * file){
       if(sp[P_DUMP] < MIN_DUMP) sp[P_DUMP] = MIN_DUMP;
       dumpPeriod = ((long long)1 << sp[P_DUMP]) - 1;
    }
-   rule = sp[P_RULE];
    width = sp[P_WIDTH];
    period = sp[P_PERIOD];
    offset = sp[P_OFFSET];
@@ -903,15 +903,7 @@ void initializeSearch(char * file){
 
 void echoParams(){
    int i,j;
-   printf("Rule: B");
-   for(i = 0; i < 9; i++){
-      if(rule & (1 << i)) printf("%d",i);
-   }
-   printf("/S");
-   for(i = 9; i < 18; i++){
-      if(rule & (1 << i)) printf("%d",i - 9);
-   }
-   printf("\n");
+   printf("Rule: %s\n", rule) ;
    printf("Period: %d\n",sp[P_PERIOD]);
    printf("Offset: %d\n",sp[P_OFFSET]);
    printf("Width:  %d\n",sp[P_WIDTH]);
@@ -990,8 +982,6 @@ int main(int argc, char *argv[]){
    for (int i=0; i<argc; i++)
       printf(" %s", argv[i]) ;
    printf("\n") ;
-   fasterTable() ;
-   sp[P_RULE] = 6152;         //first 9 bits represent births; next 9 bits represent survivals
    sp[P_WIDTH] = 0;
    sp[P_PERIOD] = 0;
    sp[P_OFFSET] = 0;
@@ -1014,6 +1004,8 @@ int main(int argc, char *argv[]){
       usage();
       return 0;
    }
+   const char *err ;
+   parseRule(rule, nttable) ; // pick up default rule
    if(argc == 3 && (!strcmp(argv[1],"s") || !strcmp(argv[1],"S") || !strcmp(argv[1],"p") || !strcmp(argv[1],"P"))) loadDumpFlag = 1;
    else{
       for(s = 1; s < argc; s++){    //read input parameters
@@ -1024,13 +1016,11 @@ int main(int argc, char *argv[]){
          int sshift ;
          switch(argv[s][0]){
             case 'b': case 'B':     //read rule
-               sp[P_RULE] = 0;
-               sshift = 0;
-               for(int i = 1; i < 100; i++){
-                  int rnum = argv[s][i];
-                  if(!rnum)break;
-                  if(rnum == 's' || rnum == 'S')sshift = 9;
-                  if(rnum >= '0' && rnum <= '8')sp[P_RULE] += 1 << (sshift + rnum - '0');
+               rule = argv[s] ;
+               err = parseRule(argv[s], nttable) ;
+               if (err != 0) {
+                  fprintf(stderr, "Failed to parse rule %s\n", argv[s]) ;
+                  exit(10) ;
                }
             break;
             case 'w': case 'W': sscanf(&argv[s][1], "%d", &sp[P_WIDTH]); break;
@@ -1055,6 +1045,7 @@ int main(int argc, char *argv[]){
          }
       }
    }
+   fasterTable() ;
    if (sp[P_REORDER] == 2)
       srand48(time(0)) ;
    if(loadDumpFlag) loadState(argv[1],argv[2]);     //load search state from file
