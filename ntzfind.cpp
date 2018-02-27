@@ -300,7 +300,7 @@ void makeTables() {
       rowHash[i] = -1 ;
    ev2Rows = (uint16_t *)malloc(sizeof(*ev2Rows) * (1LL << (width * 2)));
    gcount = (uint32_t *)malloc(sizeof(*gcount) * (1LL << width));
-   memusage = (sizeof(*gInd3)+sizeof(*ev2Rows)+2*sizeof(int)) << (width*2) ;
+   memusage += (sizeof(*gInd3)+sizeof(*ev2Rows)+2*sizeof(int)) << (width*2) ;
    uint32_t i;
    for(i = 0; i < 1 << width; ++i) gcount[i] = 0 ;
    for (int i=0; i<1<<(2*width); i++)
@@ -1057,6 +1057,7 @@ int main(int argc, char *argv[]){
    cachesize = 32768 ;
    while (cachesize * sizeof(cacheentry) < 550000 * cachemem)
       cachesize <<= 1 ;
+   memusage += sizeof(cacheentry) * cachesize ;
    cache = (struct cacheentry *)calloc(sizeof(cacheentry), cachesize) ;
    if (sp[P_REORDER] == 2)
       srand48(time(0)) ;
