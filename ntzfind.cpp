@@ -520,19 +520,22 @@ void printPattern(){
    printf("%s", buf);
    fflush(stdout);
 }
-const int CACHESIZE = 32768 ;
+int cachemem = 32 ; // megabytes for the cache
+long long cachesize ;
 struct cacheentry {
    uint16_t *p1, *p2, *p3, a, b, r ;
-} cache[CACHESIZE] ;
+} *cache ;
+long long lookup, miss ;
 int getkey(uint16_t *p1, uint16_t *p2, uint16_t *p3, uint16_t a, uint16_t b) {
    unsigned long long h = (unsigned long long)p1 +
       17 * (unsigned long long)p2 + 257 * (unsigned long long)p3 +
       513 * a + 2049 * b ;
    h = h + (h >> 15) ;
-   h &= (CACHESIZE-1) ;
+   h &= (cachesize-1) ;
    struct cacheentry &ce = cache[h] ;
    if (ce.p1 == p1 && ce.p2 == p2 && ce.p3 == p3 && ce.a == a && ce.b == b)
       return -2 + (int)ce.r ;
+   miss++ ;
    ce.p1 = p1 ;
    ce.p2 = p2 ;
    ce.p3 = p3 ;
@@ -974,6 +977,7 @@ void usage(){
 // printf("  s    resumes search from the loaded state\n");
 // printf("  p    outputs the pattern representing the loaded state\n");
    printf("  RNNN restricts memory usage to NNN megabytes\n") ;
+   printf("  CNNN uses about NNN megabytes for lookahead cache\n") ;
 }
 
 int main(int argc, char *argv[]){
@@ -1042,10 +1046,18 @@ int main(int argc, char *argv[]){
             case 'r':           sp[P_REORDER] = 2; break;
             case 'n':           sp[P_REORDER] = 3; break;
             case 'R': sscanf(&argv[s][1], "%lld", &memlimit) ; memlimit <<= 20 ; break ;
+            case 'C': sscanf(&argv[s][1], "%d", &cachemem); break ;
+            default:
+               printf("Unrecognized option %s\n", argv[s]) ;
+               exit(10) ;
          }
       }
    }
    fasterTable() ;
+   cachesize = 32768 ;
+   while (cachesize * sizeof(cacheentry) < 550000 * cachemem)
+      cachesize <<= 1 ;
+   cache = (struct cacheentry *)calloc(sizeof(cacheentry), cachesize) ;
    if (sp[P_REORDER] == 2)
       srand48(time(0)) ;
    if(loadDumpFlag) loadState(argv[1],argv[2]);     //load search state from file
