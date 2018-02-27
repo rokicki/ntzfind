@@ -12,3 +12,5 @@ Changes so far:
 * Table generation dynamic (as needed) rather than up-front
 
 * Rule parsing integrated; no need for separate python script
+
+* Added randomized search order; are you feeling lucky?
