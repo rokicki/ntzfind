@@ -526,7 +526,6 @@ struct cacheentry {
    uint16_t *p1, *p2, *p3 ;
    int abn, r ;
 } *cache ;
-long long lookup, miss ;
 int getkey(uint16_t *p1, uint16_t *p2, uint16_t *p3, int abn) {
    unsigned long long h = (unsigned long long)p1 +
       17 * (unsigned long long)p2 + 257 * (unsigned long long)p3 +
@@ -536,7 +535,6 @@ int getkey(uint16_t *p1, uint16_t *p2, uint16_t *p3, int abn) {
    struct cacheentry &ce = cache[h] ;
    if (ce.p1 == p1 && ce.p2 == p2 && ce.p3 == p3 && ce.abn == abn)
       return -2 + ce.r ;
-   miss++ ;
    ce.p1 = p1 ;
    ce.p2 = p2 ;
    ce.p3 = p3 ;
