@@ -564,9 +564,10 @@ int lookAhead(int a){
    if(tripleOff[phase] >= sp[P_PERIOD]){
       int off = a + sp[P_PERIOD] - tripleOff[phase] ;
       if (off < 2 * sp[P_PERIOD]) { // always zero if here
-         riStart13 = pRows + a + sp[P_PERIOD] - tripleOff[phase] ;
+         riStart13 = pRows + off ;
       } else {
-         riStart13 = pInd[a + sp[P_PERIOD] - tripleOff[phase]] + (pRemain[a + sp[P_PERIOD] - tripleOff[phase]]);
+         // must *not* point to stack here to keep cache consistent!
+         riStart13 = pInd[off] + pRemain[off];
       }
       numRows13 = 1 ;
    } else {
