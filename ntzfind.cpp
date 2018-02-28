@@ -293,20 +293,20 @@ int *rowHash ;
 uint16_t *valorder ;
 void genStatCounts() ;
 void makeTables() {
-   gInd3 = (uint16_t **)malloc(sizeof(*gInd3)*(1LL<<(width*2))) ;
-   rowHash = (int *)malloc(sizeof(int)*(2LL<<(width*2))) ;
+   gInd3 = (uint16_t **)calloc(sizeof(*gInd3),(1LL<<(width*2))) ;
+   rowHash = (int *)calloc(sizeof(int),(2LL<<(width*2))) ;
    for (int i=0; i<1<<(2*width); i++)
       gInd3[i] = 0 ;
    for (int i=0; i<2<<(2*width); i++)
       rowHash[i] = -1 ;
-   ev2Rows = (uint16_t *)malloc(sizeof(*ev2Rows) * (1LL << (width * 2)));
-   gcount = (uint32_t *)malloc(sizeof(*gcount) * (1LL << width));
+   ev2Rows = (uint16_t *)calloc(sizeof(*ev2Rows), (1LL << (width * 2)));
+   gcount = (uint32_t *)calloc(sizeof(*gcount), (1LL << width));
    memusage += (sizeof(*gInd3)+sizeof(*ev2Rows)+2*sizeof(int)) << (width*2) ;
    uint32_t i;
    for(i = 0; i < 1 << width; ++i) gcount[i] = 0 ;
    for (int i=0; i<1<<(2*width); i++)
       ev2Rows[i] = 0 ;
-   gWork = (int *)malloc(3 * sizeof(int) << width) ;
+   gWork = (int *)calloc(sizeof(int), 3LL << width) ;
    if (sp[P_REORDER] == 1)
       genStatCounts() ;
    if (sp[P_REORDER] == 2) {
@@ -318,7 +318,7 @@ void makeTables() {
       for (int i=1; i<1<<width; i++)
          gcount[i] = 1 + gcount[i & (i - 1)] ;
    gcount[0] = 0 ;
-   valorder = (uint16_t *)malloc(sizeof(uint16_t) << width) ;
+   valorder = (uint16_t *)calloc(sizeof(uint16_t), 1LL << width) ;
    for (int i=0; i<1<<width; i++)
       valorder[i] = (1<<width)-1-i ;
    if (sp[P_REORDER] != 0)
@@ -338,7 +338,7 @@ uint16_t *bmalloc(int siz) {
          printf("Aborting due to excessive memory usage\n") ;
          exit(0) ;
       }
-      bbuf = (uint16_t *)malloc(2*bbuf_left) ;
+      bbuf = (uint16_t *)calloc(sizeof(uint16_t), bbuf_left) ;
    }
    uint16_t *r = bbuf ;
    bbuf += siz ;
@@ -435,7 +435,7 @@ uint16_t *makeRow(int row1, int row2) {
  *   the edge conditions appropriately.
  */
 void genStatCounts() {
-   int *cnt = (int*)malloc((128 * sizeof(int)) << width) ;
+   int *cnt = (int*)calloc((128 * sizeof(int)), 1LL << width) ;
    for (int i=0; i<128<<width; i++)
       cnt[i] = 0 ;
    int s = 0 ;
@@ -772,6 +772,7 @@ void search(){
                      pRows[currRow - period],
                      pRows[currRow - period + backOff[phase]],
                      pInd[currRow], pRemain[currRow]) ;
+ //   printf("Depth %d trying %x\n", currRow, pRows[currRow]) ;
    }
 }
 
@@ -817,7 +818,7 @@ void loadState(char * cmd, char * file){
 
    firstFull = loadInt(fp);
    shipNum = loadInt(fp);
-   lastNonempty = (int *)malloc(sizeof(int) * (sp[P_DEPTH_LIMIT]/10));
+   lastNonempty = (int *)calloc(sizeof(int), (sp[P_DEPTH_LIMIT]/10));
    for (i = 1; i <= shipNum; i++)
       lastNonempty[i] = loadUL(fp);
    rowNum = loadInt(fp);
@@ -838,9 +839,9 @@ void loadState(char * cmd, char * file){
       }
    }
    
-   pRows = (uint16_t *)malloc(sp[P_DEPTH_LIMIT] * sizeof(uint16_t));
-   pInd = (uint16_t **)malloc(sp[P_DEPTH_LIMIT] * sizeof(uint16_t *));
-   pRemain = (int *)malloc(sp[P_DEPTH_LIMIT] * sizeof(int));
+   pRows = (uint16_t *)calloc(sp[P_DEPTH_LIMIT], sizeof(uint16_t));
+   pInd = (uint16_t **)calloc(sp[P_DEPTH_LIMIT], sizeof(uint16_t *));
+   pRemain = (int *)calloc(sp[P_DEPTH_LIMIT], sizeof(int));
    
    for (i = 0; i < 2 * period; i++)
       pRows[i] = (uint16_t) loadUL(fp);
@@ -897,10 +898,10 @@ void initializeSearch(char * file){
       }
    }
    
-   pRows = (uint16_t *)malloc(sp[P_DEPTH_LIMIT] * sizeof(uint16_t));
-   pInd = (uint16_t **)malloc(sp[P_DEPTH_LIMIT] * sizeof(uint16_t *));
-   pRemain = (int *)malloc(sp[P_DEPTH_LIMIT] * sizeof(int));
-   lastNonempty = (int *)malloc(sizeof(int) * (sp[P_DEPTH_LIMIT]/10));
+   pRows = (uint16_t *)calloc(sp[P_DEPTH_LIMIT], sizeof(uint16_t));
+   pInd = (uint16_t **)calloc(sp[P_DEPTH_LIMIT], sizeof(uint16_t *));
+   pRemain = (int *)calloc(sp[P_DEPTH_LIMIT], sizeof(int));
+   lastNonempty = (int *)calloc(sizeof(int), (sp[P_DEPTH_LIMIT]/10));
    rowNum = 2 * period;
    for(i = 0; i < 2 * period; i++)pRows[i] = 0;
    if(sp[P_INIT_ROWS]) loadInitRows(file);
@@ -1100,7 +1101,7 @@ int main(int argc, char *argv[]){
       else printf("Dump failed\n");
       return 0;
    }
-   buf = (char *)malloc((2*sp[P_WIDTH] + 4) * sp[P_DEPTH_LIMIT]);  // I think this gives more than enough space
+   buf = (char *)calloc((2*sp[P_WIDTH] + 4), sp[P_DEPTH_LIMIT]);  // I think this gives more than enough space
    buf[0] = '\0';
    printf("Starting search\n");
    fflush(stdout) ;
