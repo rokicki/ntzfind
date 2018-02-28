@@ -669,7 +669,21 @@ int checkInteract(int a){
    }
    return 0;
 }
-
+/*
+ *   Symmetry breaking for asymmetric searches:
+ *
+ *   Return -1 if bitreverse(v) > v
+ *   Return 0 if bitreverse(v) == v
+ *   Return 1 if bitreverse(v) < v
+ */
+int checkPalindrome(int v) {
+   for (int i=0; i+i<width; i++) {
+      int t = ((v >> i) & 1) - ((v >> (width - 1 - i)) & 1) ;
+      if (t)
+         return t ;
+   }
+   return 0 ;
+}
 void search(){
    uint32_t currRow = rowNum;    // currRow == index of current row
    int j;
@@ -682,6 +696,9 @@ void search(){
    int buffFlag = 0;
    double ms = get_cpu_time();
    phase = currRow % period;
+   int firstasymm = 0 ;
+   if (sp[P_SYMMETRY] == SYM_ASYM)
+      firstasymm = currRow ;
    for(;;){
       ++calcs;
       if(!(calcs & dumpPeriod)){
@@ -721,6 +738,15 @@ void search(){
       }
       --pRemain[currRow];
       pRows[currRow] = pInd[currRow][pRemain[currRow]];
+      if (currRow <= firstasymm) {
+         int palin = checkPalindrome(pRows[currRow]) ;
+         if (palin < 0)
+            continue ;
+         if (palin == 0)
+            firstasymm = currRow + 1 ;
+         else
+            firstasymm = currRow ;
+      }
       if(sp[P_MAX_LENGTH] && currRow > sp[P_MAX_LENGTH] + 2 * period - 1 && pRows[currRow] != 0) continue;  //back up if length exceeds max length
       if(sp[P_FULL_PERIOD] && currRow > sp[P_FULL_PERIOD] && !firstFull && pRows[currRow]) continue;        //back up if not full period by certain length
       if(sp[P_FULL_WIDTH] && (pRows[currRow] & fpBitmask)){
