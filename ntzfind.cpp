@@ -484,8 +484,7 @@ void genStatCounts() {
 void printInfo(int currentDepth, unsigned long long numCalcs, double runTime){
    if(currentDepth >= 0) printf("Current depth: %d\n", currentDepth - 2*period);
    printf("Calculations: ");
-   if(numCalcs > 1000000000)printf("%lluM\n", numCalcs / 1000000);
-   else printf("%llu\n", numCalcs);
+   printf("%llu\n", numCalcs);
    printf("CPU time: %f seconds\n",runTime);
    fflush(stdout);
 }
@@ -563,8 +562,13 @@ int lookAhead(int a){
                   pRows[a - fwdOff[phase]], riStart12, numRows12) ;
    
    if(tripleOff[phase] >= sp[P_PERIOD]){
-      riStart13 = pInd[a + sp[P_PERIOD] - tripleOff[phase]] + (pRemain[a + sp[P_PERIOD] - tripleOff[phase]]);
-      numRows13 = 1;
+      int off = a + sp[P_PERIOD] - tripleOff[phase] ;
+      if (off < 2 * sp[P_PERIOD]) { // always zero if here
+         riStart13 = pRows + a + sp[P_PERIOD] - tripleOff[phase] ;
+      } else {
+         riStart13 = pInd[a + sp[P_PERIOD] - tripleOff[phase]] + (pRemain[a + sp[P_PERIOD] - tripleOff[phase]]);
+      }
+      numRows13 = 1 ;
    } else {
       getoffsetcount(pRows[a - sp[P_PERIOD] - tripleOff[phase]],
                      pRows[a - tripleOff[phase]],
@@ -724,7 +728,7 @@ void search(){
          }
       }
       if(shipNum && currRow == lastNonempty[shipNum] + 2*period && !checkInteract(currRow)) continue;       //back up if new rows don't interact with ship
-      if(!lookAhead(currRow))continue;
+      if(!lookAhead(currRow)) continue ;
       if(sp[P_FULL_PERIOD] && !firstFull){
          if(equivRow[phase] < 0 && pRows[currRow] != pRows[currRow + equivRow[phase]]){
             if(!twoSubPeriods || (equivRow2[phase] < 0 && pRows[currRow] != pRows[currRow + equivRow2[phase]])) firstFull = currRow;
@@ -772,7 +776,6 @@ void search(){
                      pRows[currRow - period],
                      pRows[currRow - period + backOff[phase]],
                      pInd[currRow], pRemain[currRow]) ;
- //   printf("Depth %d trying %x\n", currRow, pRows[currRow]) ;
    }
 }
 
