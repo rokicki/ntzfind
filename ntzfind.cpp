@@ -358,7 +358,7 @@ uint16_t *makeRow(int row1, int row2) {
    int *gWork3 = gWork2 + (1 << width) ;
    if (width < 4) {
       for (int row3=0; row3<1<<width; row3++)
-         gWork[row3] = evolveRow(row1, row2, row3) ;
+         gWork3[row3] = evolveRow(row1, row2, row3) ;
    } else {
       int lowbitcount = (width >> 1) + 1 ;
       int hibitcount = ((width + 1) >> 1) + 1 ;
