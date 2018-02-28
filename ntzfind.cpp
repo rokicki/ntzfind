@@ -842,9 +842,9 @@ void loadState(char * cmd, char * file){
       }
    }
    
-   pRows = (uint16_t *)calloc(sp[P_DEPTH_LIMIT], sizeof(uint16_t));
-   pInd = (uint16_t **)calloc(sp[P_DEPTH_LIMIT], sizeof(uint16_t *));
-   pRemain = (int *)calloc(sp[P_DEPTH_LIMIT], sizeof(int));
+   pRows = (uint16_t *)calloc(1+sp[P_DEPTH_LIMIT], sizeof(uint16_t));
+   pInd = (uint16_t **)calloc(1+sp[P_DEPTH_LIMIT], sizeof(uint16_t *));
+   pRemain = (int *)calloc(1+sp[P_DEPTH_LIMIT], sizeof(int));
    
    for (i = 0; i < 2 * period; i++)
       pRows[i] = (uint16_t) loadUL(fp);
@@ -901,9 +901,9 @@ void initializeSearch(char * file){
       }
    }
    
-   pRows = (uint16_t *)calloc(sp[P_DEPTH_LIMIT], sizeof(uint16_t));
-   pInd = (uint16_t **)calloc(sp[P_DEPTH_LIMIT], sizeof(uint16_t *));
-   pRemain = (int *)calloc(sp[P_DEPTH_LIMIT], sizeof(int));
+   pRows = (uint16_t *)calloc(1+sp[P_DEPTH_LIMIT], sizeof(uint16_t));
+   pInd = (uint16_t **)calloc(1+sp[P_DEPTH_LIMIT], sizeof(uint16_t *));
+   pRemain = (int *)calloc(1+sp[P_DEPTH_LIMIT], sizeof(int));
    lastNonempty = (int *)calloc(sizeof(int), (sp[P_DEPTH_LIMIT]/10));
    rowNum = 2 * period;
    for(i = 0; i < 2 * period; i++)pRows[i] = 0;
