@@ -8,6 +8,8 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <time.h>
+#include <random>
 #include "tab.cpp"
 
 #define BANNER "ntzfind 3.0 by \"zdr\", Matthias Merzenich, Aidan Pierce, and Tomas Rokicki, 24 February 2018"
@@ -62,7 +64,6 @@ double get_cpu_time(){
 
 //  Posix/Linux
 #else
-#include <time.h>
 double get_cpu_time(){
     return (double)clock() / CLOCKS_PER_SEC;
 }
@@ -308,9 +309,11 @@ void makeTables() {
    gWork = (int *)malloc(3 * sizeof(int) << width) ;
    if (sp[P_REORDER] == 1)
       genStatCounts() ;
-   if (sp[P_REORDER] == 2)
+   if (sp[P_REORDER] == 2) {
+      std::mt19937 mt_rand(time(0));
       for (int i=1; i<1<<width; i++)
-         gcount[i] = 1 + (lrand48() & 0x3fffffff) ;
+         gcount[i] = 1 + (mt_rand() & 0x3fffffff) ;
+   }
    if (sp[P_REORDER] == 3)
       for (int i=1; i<1<<width; i++)
          gcount[i] = 1 + gcount[i & (i - 1)] ;
@@ -1058,8 +1061,6 @@ int main(int argc, char *argv[]){
       cachesize <<= 1 ;
    memusage += sizeof(cacheentry) * cachesize ;
    cache = (struct cacheentry *)calloc(sizeof(cacheentry), cachesize) ;
-   if (sp[P_REORDER] == 2)
-      srand48(time(0)) ;
    if(loadDumpFlag) loadState(argv[1],argv[2]);     //load search state from file
    else initializeSearch(argv[sp[P_INIT_ROWS]]);    //initialize search based on input parameters
    if(!sp[P_WIDTH] || !sp[P_PERIOD] || !sp[P_OFFSET] || !sp[P_SYMMETRY]){
