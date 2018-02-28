@@ -523,24 +523,24 @@ void printPattern(){
 int cachemem = 32 ; // megabytes for the cache
 long long cachesize ;
 struct cacheentry {
-   uint16_t *p1, *p2, *p3, a, b, r ;
+   uint16_t *p1, *p2, *p3 ;
+   int abn, r ;
 } *cache ;
 long long lookup, miss ;
-int getkey(uint16_t *p1, uint16_t *p2, uint16_t *p3, uint16_t a, uint16_t b) {
+int getkey(uint16_t *p1, uint16_t *p2, uint16_t *p3, int abn) {
    unsigned long long h = (unsigned long long)p1 +
       17 * (unsigned long long)p2 + 257 * (unsigned long long)p3 +
-      513 * a + 2049 * b ;
+      513 * abn ;
    h = h + (h >> 15) ;
    h &= (cachesize-1) ;
    struct cacheentry &ce = cache[h] ;
-   if (ce.p1 == p1 && ce.p2 == p2 && ce.p3 == p3 && ce.a == a && ce.b == b)
-      return -2 + (int)ce.r ;
+   if (ce.p1 == p1 && ce.p2 == p2 && ce.p3 == p3 && ce.abn == abn)
+      return -2 + ce.r ;
    miss++ ;
    ce.p1 = p1 ;
    ce.p2 = p2 ;
    ce.p3 = p3 ;
-   ce.a = a ;
-   ce.b = b ;
+   ce.abn = abn ;
    return h ;
 }
 void setkey(int h, int v) {
@@ -569,8 +569,9 @@ int lookAhead(int a){
                      pRows[a - tripleOff[phase]],
                      pRows[a - doubleOff[phase]], riStart13, numRows13) ;
    }
-   int k = getkey(riStart11, riStart12, riStart13, pRows[a-doubleOff[phase]],
-                  pRows[a-tripleOff[phase]]) ;
+   int k = getkey(riStart11, riStart12, riStart13,
+    (((pRows[a-doubleOff[phase]] << width) + pRows[a-tripleOff[phase]]) << 1)
+        + (numRows13 == 1)) ;
    if (k < 0)
       return k+2 ;
    for(ri11 = 0; ri11 < numRows11; ++ri11){
