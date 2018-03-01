@@ -10,6 +10,7 @@
 #include <string.h>
 #include <time.h>
 #include <random>
+#include <pthread.h>
 #include "tab.cpp"
 
 #define BANNER "ntzfind 3.0 by \"zdr\", Matthias Merzenich, Aidan Pierce, and Tomas Rokicki, 24 February 2018"
@@ -39,7 +40,127 @@
 #define SYM_EVEN 3
 #define SYM_GUTTER 4
 
+/*
+ *   For multithreading, all of these are fixed or constant before any
+ *   threads are created---or, their modification is restricted to when
+ *   we hold the global lock (sp).
+ */
 const char *rule = "B3/S23" ;
+int nttable[512] ;
+int sp[NUM_PARAMS];
+uint16_t **gInd3 ;
+uint32_t *gcount ;
+uint16_t *ev2Rows;               // lookup table that gives the evolution of a row with a blank row above and a specified row below
+long long memusage ;
+long long memlimit = 0x7000000000000000LL ;
+int bc[8] = {0, 1, 1, 2, 1, 2, 2, 3};
+int period, offset, width ;
+uint16_t fpBitmask = 0;
+int fwdOff[MAXPERIOD], backOff[MAXPERIOD], doubleOff[MAXPERIOD], tripleOff[MAXPERIOD];
+char nttable2[512] ;
+
+/*
+** For each possible phase of the ship, equivRow[phase] gives the row that 
+** is equivalent if the pattern is subperiodic with a specified period.
+** equivRow2 is necessary if period == 12, 24, or 30, as then two subperiods
+** need to be tested (e.g., if period == 12, we must test subperiods 4 and 6).
+** twoSubPeriods is a flag that tells the program to test two subperiods.
+*/
+
+int equivRow[MAXPERIOD];
+int equivRow2[MAXPERIOD];
+int twoSubPeriods = 0;
+int *gWork ;
+int *rowHash ;
+uint16_t *valorder ;
+uint16_t *bbuf ;
+int bbuf_left = 0 ;
+int cachemem = 32 ; // megabytes for the cache
+long long cachesize ;
+struct cacheentry {
+   uint16_t *p1, *p2, *p3 ;
+   int abn, r ;
+} ;
+char * loadFile;
+int numThreads = 4 ;
+const int MAXTHREADS = 256 ;
+class searchThread *threads ;
+long long currentWork ; // below this, assigned; above or equal, waiting
+int divergenceLevel ; // where we split by thread
+/*
+ *   These are per-thread (are modified by search).  So we embed them in
+ *   a class.
+ */
+class searchThread {
+public:
+   searchThread() : pInd(0), pRemain(0), pRows(0), cache(0), lastNonempty(0),
+                    rowNum(0), phase(0), shipNum(0), firstFull(0) { }
+   void initializeThread(char *f) ;
+   void search();
+private:
+   int getkey(uint16_t *p1, uint16_t *p2, uint16_t *p3, int abn);
+   void setkey(int h, int v);
+   void loadInitRows(char * file) ;
+   int lookAhead(int a);
+   int checkInteract(int a);
+   void buffPattern(int theRow);
+   void printPattern() ;
+   uint16_t **pInd ;
+   int *pRemain;
+   uint16_t *pRows;
+   int *lastNonempty;
+   struct cacheentry *cache ;
+   int phase, rowNum ;
+   int shipNum, firstFull;
+   char *buf;
+   long long threadpad[8] ; // ensure threads don't share cachelines
+} ;
+pthread_mutex_t mmutex ;
+void init_mutex() {
+  pthread_mutex_init(&mmutex, NULL) ;
+}
+void get_global_lock() {
+   pthread_mutex_lock(&mmutex) ;
+}
+void release_global_lock() {
+   pthread_mutex_unlock(&mmutex) ;
+}
+pthread_t *p_thread ;
+#define THREAD_RETURN_TYPE void *
+#define THREAD_DECLARATOR
+void spawn_thread(int i, THREAD_RETURN_TYPE(THREAD_DECLARATOR *p)(void *),
+                                                                     void *o) {
+   pthread_create(&(p_thread[i]), NULL, p, o) ;
+}
+void join_thread(int i) {
+   pthread_join(p_thread[i], 0) ;
+}
+void *searchWorker(void *o) {
+   searchThread *st = (searchThread *)o ;
+   st->search() ;
+   return 0 ;
+}
+/*
+ *   Should I (my thread) do this work item?
+ */
+int forMeQ(long long v) {
+   get_global_lock() ;
+// printf("Query about %lld while %lld\n", v, currentWork) ;
+   if (v > currentWork)
+      fprintf(stderr, "Error; got a work item larger than expected") ;
+   int r = 0 ;
+   if (v == currentWork) {
+      r = 1 ;
+      currentWork++ ;
+   }
+   release_global_lock() ;
+   return r ;
+}
+
+/*
+ *   There should be no data declarations after this line; everything
+ *   else should just be code.
+ */
 
 /* get_cpu_time() definition taken from
 ** http://stackoverflow.com/questions/17432502/how-can-i-measure-cpu-time-and-wall-clock-time-on-both-linux-windows/17440673#17440673
@@ -68,27 +189,6 @@ double get_cpu_time(){
     return (double)clock() / CLOCKS_PER_SEC;
 }
 #endif
-
-int nttable[512] ;
-int sp[NUM_PARAMS];
-uint16_t **pInd ;
-uint16_t **gInd3 ;
-int *pRemain;
-uint32_t *gcount ;
-uint16_t *gRows, *pRows;
-uint16_t *ev2Rows;               // lookup table that gives the evolution of a row with a blank row above and a specified row below
-int *lastNonempty;
-unsigned long long dumpPeriod;
-long long memusage ;
-long long memlimit = 0x7000000000000000LL ;
-int bc[8] = {0, 1, 1, 2, 1, 2, 2, 3};
-char *buf;
-
-int period, offset, width, rowNum, loadDumpFlag;
-int shipNum, firstFull;
-uint16_t fpBitmask = 0;
-
-int phase, fwdOff[MAXPERIOD], backOff[MAXPERIOD], doubleOff[MAXPERIOD], tripleOff[MAXPERIOD];
 
 void error(const char *s) {
    fprintf(stderr, "%s\n", s) ;
@@ -122,18 +222,6 @@ void makePhases(){
       tripleOff[i] = fwdOff[i] + doubleOff[j];
    }
 }
-
-/*
-** For each possible phase of the ship, equivRow[phase] gives the row that 
-** is equivalent if the pattern is subperiodic with a specified period.
-** equivRow2 is necessary if period == 12, 24, or 30, as then two subperiods
-** need to be tested (e.g., if period == 12, we must test subperiods 4 and 6).
-** twoSubPeriods is a flag that tells the program to test two subperiods.
-*/
-
-int equivRow[MAXPERIOD];
-int equivRow2[MAXPERIOD];
-int twoSubPeriods = 0;
 
 int gcd(int a, int b){
    int c;
@@ -170,8 +258,6 @@ void makeEqRows(int maxFactor, int a){
       }
    }
 }
-
-char nttable2[512] ;
 
 int slowEvolveBit(int row1, int row2, int row3, int bshift){
    return nttable[(((row2>>bshift) & 2)<<7) | (((row1>>bshift) & 2)<<6)
@@ -288,9 +374,6 @@ int getcount(int row1, int row2, int row3) {
    uint16_t *row = getoffset(row1, row2) ;
    return row[row3+1] - row[row3] ;
 }
-int *gWork ;
-int *rowHash ;
-uint16_t *valorder ;
 void genStatCounts() ;
 void makeTables() {
    gInd3 = (uint16_t **)calloc(sizeof(*gInd3),(1LL<<(width*2))) ;
@@ -323,11 +406,12 @@ void makeTables() {
       valorder[i] = (1<<width)-1-i ;
    if (sp[P_REORDER] != 0)
       sortRows(valorder, 1<<width) ;
-   for (int row2=0; row2<1<<width; row2++)
-      makeRow(0, row2) ;
+   // for threading, we need the whole table before we start
+   // we need to multithread table generation too, but not initially
+   for (int row1=0; row1<1<<width; row1++)
+      for (int row2=0; row2<1<<width; row2++)
+         makeRow(row1, row2) ;
 }
-uint16_t *bbuf ;
-int bbuf_left = 0 ;
 // reduce fragmentation by allocating chunks larger than needed and
 // parceling out the small pieces.
 uint16_t *bmalloc(int siz) {
@@ -489,7 +573,7 @@ void printInfo(int currentDepth, unsigned long long numCalcs, double runTime){
    fflush(stdout);
 }
 
-void buffPattern(int theRow){
+void searchThread::buffPattern(int theRow){
    int firstRow = 2 * period;
    if(sp[P_INIT_ROWS]) firstRow = 0;
    int lastRow;
@@ -518,35 +602,30 @@ void buffPattern(int theRow){
    out += sprintf(out, "Length: %d\n", lastRow - 2 * period + 1);
 }
 
-void printPattern(){
+void searchThread::printPattern(){
    printf("%s", buf);
    fflush(stdout);
 }
-int cachemem = 32 ; // megabytes for the cache
-long long cachesize ;
-struct cacheentry {
-   uint16_t *p1, *p2, *p3 ;
-   int abn, r ;
-} *cache ;
-int getkey(uint16_t *p1, uint16_t *p2, uint16_t *p3, int abn) {
+int searchThread::getkey(uint16_t *p1, uint16_t *p2, uint16_t *p3, int abn) {
    unsigned long long h = (unsigned long long)p1 +
       17 * (unsigned long long)p2 + 257 * (unsigned long long)p3 +
       513 * abn ;
    h = h + (h >> 15) ;
    h &= (cachesize-1) ;
    struct cacheentry &ce = cache[h] ;
-   if (ce.p1 == p1 && ce.p2 == p2 && ce.p3 == p3 && ce.abn == abn)
+   if (ce.p1 == p1 && ce.p2 == p2 && ce.p3 == p3 && ce.abn == abn) {
       return -2 + ce.r ;
+   }
    ce.p1 = p1 ;
    ce.p2 = p2 ;
    ce.p3 = p3 ;
    ce.abn = abn ;
    return h ;
 }
-void setkey(int h, int v) {
+void searchThread::setkey(int h, int v) {
    cache[h].r = v ;
 }
-int lookAhead(int a){
+int searchThread::lookAhead(int a){
    int ri11, ri12, ri13, ri22, ri23;  //indices: first number represents vertical offset, second number represents generational offset
    uint16_t *riStart11, *riStart12, *riStart13, *riStart22, *riStart23;
    int numRows11, numRows12, numRows13, numRows22, numRows23;
@@ -612,57 +691,7 @@ int lookAhead(int a){
    return 0;
 }
 
-int dumpNum = 1;
-char dumpFile[12];
-#define DUMPROOT "dump"
-int dumpFlag = 0; /* Dump status flags, possible values follow */
-#define DUMPPENDING (1)
-#define DUMPFAILURE (2)
-#define DUMPSUCCESS (3)
-
-int dumpandexit = 0;
-
-FILE * openDumpFile(){
-    FILE * fp;
-
-    while (dumpNum < 10000)
-    {
-        sprintf(dumpFile,"%s%04d",DUMPROOT,dumpNum++);
-        if((fp=fopen(dumpFile,"r")))
-            fclose(fp);
-        else
-            return fopen(dumpFile,"w");
-    }
-    return (FILE *) 0;
-}
-
-void dumpState(int v){ // v = rowNum
-    printf("Dumping state not supported at the moment.\n") ;
-    exit(10) ;
-    FILE * fp;
-    int i;
-    dumpFlag = DUMPFAILURE;
-    if (!(fp = openDumpFile())) return;
-    fprintf(fp,"%lu\n",FILEVERSION);
-    for (i = 0; i < NUM_PARAMS; i++)
-       fprintf(fp,"%d\n",sp[i]);
-    fprintf(fp,"%d\n",firstFull);
-    fprintf(fp,"%d\n",shipNum);
-    for (i = 1; i <= shipNum; i++)
-       fprintf(fp,"%u\n",lastNonempty[i]);
-    fprintf(fp,"%d\n",v);
-    for (i = 0; i < 2 * period; i++)
-       fprintf(fp,"%lu\n",(unsigned long) pRows[i]);
-    for (i = 2 * period; i <= v; i++){
-       fprintf(fp,"%lu\n",(unsigned long) pRows[i]);
-// broken       fprintf(fp,"%ld\n", pInd[i]-gInd2);
-       fprintf(fp,"%lu\n",(unsigned long) pRemain[i]);
-    }
-    fclose(fp);
-    dumpFlag = DUMPSUCCESS;
-}
-
-int checkInteract(int a){
+int searchThread::checkInteract(int a){
    int i;
    for(i = a - period; i > a - 2*period; --i){
       if(ev2Rows[(pRows[i] << width) + pRows[i + period]] != pRows[i + backOff[i % period]]) return 1;
@@ -684,7 +713,7 @@ int checkPalindrome(int v) {
    }
    return 0 ;
 }
-void search(){
+void searchThread::search(){
    uint32_t currRow = rowNum;    // currRow == index of current row
    int j;
    unsigned long long calcs, lastLong;
@@ -697,16 +726,12 @@ void search(){
    double ms = get_cpu_time();
    phase = currRow % period;
    int firstasymm = 0 ;
+   long long workItem = 0 ;
+   int local_num_ships = sp[P_NUM_SHIPS] ;
    if (sp[P_SYMMETRY] == SYM_ASYM)
       firstasymm = currRow ;
    for(;;){
       ++calcs;
-      if(!(calcs & dumpPeriod)){
-         dumpState(currRow);
-         if(dumpFlag == DUMPSUCCESS) printf("State dumped to file %s%04d\n",DUMPROOT,dumpNum - 1);
-         else printf("Dump failed\n");
-         fflush(stdout);
-      }
       if(currRow > longest || !(calcs & 0xffffff)){
          if(currRow > longest){
             buffPattern(currRow);
@@ -716,8 +741,10 @@ void search(){
          }
          if((buffFlag && calcs - lastLong > 0xffffff) || !(calcs & 0xffffffff)){
             if(!(calcs & 0xffffffff)) buffPattern(currRow);
+            get_global_lock() ;
             printPattern();
             printInfo(currRow,calcs,get_cpu_time()-ms);
+            release_global_lock() ;
             buffFlag = 0;
          }
       }
@@ -728,10 +755,12 @@ void search(){
          --phase;
          if(sp[P_FULL_PERIOD] && firstFull == currRow) firstFull = 0;
          if(currRow < 2 * sp[P_PERIOD]){
+            get_global_lock() ;
             printPattern();
             if(totalShips == 1)printf("Search complete: 1 spaceship found.\n");
             else printf("Search complete: %d spaceships found.\n",totalShips);
             printInfo(-1,calcs,get_cpu_time() - ms);
+            release_global_lock() ;
             return;
          }
          continue;
@@ -761,6 +790,13 @@ void search(){
             if(!twoSubPeriods || (equivRow2[phase] < 0 && pRows[currRow] != pRows[currRow + equivRow2[phase]])) firstFull = currRow;
          }
       }
+/*
+      get_global_lock() ;
+      printf("CurrRow %d divergence %d\n", currRow, divergenceLevel) ;
+      release_global_lock() ;
+ */
+      if (currRow == divergenceLevel && !forMeQ(workItem++))
+         continue ;
       ++currRow;
       ++phase;
       if(phase == period) phase = 0;
@@ -769,18 +805,22 @@ void search(){
          for(j = 1; j <= 2 * period; ++j) noship |= pRows[currRow-j];
          if(!noship){
             if(!sp[P_FULL_PERIOD] || firstFull){
+               get_global_lock() ;
                printf("\n");
                printPattern();
                ++totalShips;
                printf("Spaceship found. (%d)\n\n",totalShips);
                printInfo(currRow,calcs,get_cpu_time() - ms);
-               --sp[P_NUM_SHIPS];
+               local_num_ships-- ;
                fflush(stdout) ;
+               release_global_lock() ;
             }
             ++shipNum;
-            if(sp[P_NUM_SHIPS] == 0){
+            if(local_num_ships == 0){
+               get_global_lock() ;
                if(totalShips == 1)printf("Search terminated: spaceship found.\n");
                else printf("Search terminated: %d spaceships found.\n",totalShips);
+               release_global_lock() ;
                return;
             }
             for(lastNonempty[shipNum] = currRow - 1; lastNonempty[shipNum] >= 0; --lastNonempty[shipNum]) if(pRows[lastNonempty[shipNum]]) break;
@@ -790,13 +830,17 @@ void search(){
             continue;
          }
          else{
+            get_global_lock() ;
             printPattern();
             printf("Search terminated: depth limit reached.\n");
             printf("Depth: %d\n", currRow - 2 * period);
             if(totalShips == 1)printf("1 spaceship found.\n");
             else printf("%d spaceships found.\n",totalShips);
+            release_global_lock() ;
          }
+         get_global_lock() ;
          printInfo(currRow,calcs,get_cpu_time() - ms);
+         release_global_lock() ;
          return;
       }
       getoffsetcount(pRows[currRow - 2 * period],
@@ -805,8 +849,6 @@ void search(){
                      pInd[currRow], pRemain[currRow]) ;
    }
 }
-
-char * loadFile;
 
 void loadFail(){
    printf("Load from file %s failed\n",loadFile);
@@ -825,71 +867,7 @@ long long loadUL(FILE *fp){
    return v;
 }
 
-void loadState(char * cmd, char * file){
-   printf("Loading state not supported at the moment.\n") ;
-   exit(10) ;
-   FILE * fp;
-   int i;
-   
-   printf("Loading search state from %s\n",file);
-   
-   loadFile = file;
-   fp = fopen(loadFile, "r");
-   if (!fp) loadFail();
-   if (loadUL(fp) != FILEVERSION)
-   {
-      printf("Incompatible file version\n");
-      exit(1);
-   }
-   
-   /* Load parameters and set stuff that can be derived from them */
-   for (i = 0; i < NUM_PARAMS; i++)
-      sp[i] = loadInt(fp);
-
-   firstFull = loadInt(fp);
-   shipNum = loadInt(fp);
-   lastNonempty = (int *)calloc(sizeof(int), (sp[P_DEPTH_LIMIT]/10));
-   for (i = 1; i <= shipNum; i++)
-      lastNonempty[i] = loadUL(fp);
-   rowNum = loadInt(fp);
-   
-   if(sp[P_DUMP] > 0){
-      if(sp[P_DUMP] < MIN_DUMP) sp[P_DUMP] = MIN_DUMP;
-      dumpPeriod = ((long long)1 << sp[P_DUMP]) - 1;
-   }
-   
-   width = sp[P_WIDTH];
-   period = sp[P_PERIOD];
-   offset = sp[P_OFFSET];
-   if(gcd(period,offset) == 1) sp[P_FULL_PERIOD] = 0;
-   if(sp[P_FULL_WIDTH] > sp[P_WIDTH]) sp[P_FULL_WIDTH] = 0;
-   if(sp[P_FULL_WIDTH] && sp[P_FULL_WIDTH] < sp[P_WIDTH]){
-      for(i = sp[P_FULL_WIDTH]; i < sp[P_WIDTH]; ++i){
-         fpBitmask |= (1 << i);
-      }
-   }
-   
-   pRows = (uint16_t *)calloc(1+sp[P_DEPTH_LIMIT], sizeof(uint16_t));
-   pInd = (uint16_t **)calloc(1+sp[P_DEPTH_LIMIT], sizeof(uint16_t *));
-   pRemain = (int *)calloc(1+sp[P_DEPTH_LIMIT], sizeof(int));
-   
-   for (i = 0; i < 2 * period; i++)
-      pRows[i] = (uint16_t) loadUL(fp);
-   for (i = 2 * period; i <= rowNum; i++){
-      pRows[i]   = (uint16_t) loadUL(fp);
-// broken      pInd[i]    = loadUL(fp) + gInd2 ;
-      pRemain[i] = (uint32_t) loadUL(fp);
-   }
-   fclose(fp);
-   
-   if(!strcmp(cmd,"p") || !strcmp(cmd,"P")){
-      buffPattern(rowNum);
-      printPattern();
-      exit(0);
-   }
-}
-
-void loadInitRows(char * file){
+void searchThread::loadInitRows(char * file){
    FILE * fp;
    int i,j;
    char rowStr[MAXWIDTH];
@@ -908,26 +886,8 @@ void loadInitRows(char * file){
    fclose(fp);
 }
 
-void initializeSearch(char * file){
+void searchThread::initializeThread(char* file) {
    int i;
-   if(sp[P_DUMP] > 0){
-      if(sp[P_DUMP] < MIN_DUMP) sp[P_DUMP] = MIN_DUMP;
-      dumpPeriod = ((long long)1 << sp[P_DUMP]) - 1;
-   }
-   width = sp[P_WIDTH];
-   period = sp[P_PERIOD];
-   offset = sp[P_OFFSET];
-   if(sp[P_MAX_LENGTH]) sp[P_DEPTH_LIMIT] = sp[P_MAX_LENGTH] + 2 * period;
-   sp[P_DEPTH_LIMIT] += 2 * period;
-   if(sp[P_FULL_PERIOD]) sp[P_FULL_PERIOD] += 2 * period - 1;
-   if(gcd(period,offset) == 1) sp[P_FULL_PERIOD] = 0;
-   if(sp[P_FULL_WIDTH] > sp[P_WIDTH]) sp[P_FULL_WIDTH] = 0;
-   if(sp[P_FULL_WIDTH] && sp[P_FULL_WIDTH] < sp[P_WIDTH]){
-      for(i = sp[P_FULL_WIDTH]; i < sp[P_WIDTH]; ++i){
-         fpBitmask |= (1 << i);
-      }
-   }
-   
    pRows = (uint16_t *)calloc(1+sp[P_DEPTH_LIMIT], sizeof(uint16_t));
    pInd = (uint16_t **)calloc(1+sp[P_DEPTH_LIMIT], sizeof(uint16_t *));
    pRemain = (int *)calloc(1+sp[P_DEPTH_LIMIT], sizeof(int));
@@ -935,6 +895,37 @@ void initializeSearch(char * file){
    rowNum = 2 * period;
    for(i = 0; i < 2 * period; i++)pRows[i] = 0;
    if(sp[P_INIT_ROWS]) loadInitRows(file);
+   for (int i=0; i<sp[P_DEPTH_LIMIT]; i++) {
+      pInd[i] = gInd3[0] + gInd3[0][0] ;
+      pRemain[i] = 0 ;
+   }
+   pRemain[2 * period] = gInd3[0][1] - gInd3[0][0] - 1 ;
+   pInd[2 * period] = gInd3[0] + gInd3[0][0] ;
+   if(sp[P_INIT_ROWS]){
+      getoffsetcount(pRows[0], pRows[period], pRows[period+backOff[0]],
+                     pInd[2*period], pRemain[2*period]) ;
+   }
+   cache = (struct cacheentry *)calloc(sizeof(cacheentry), cachesize) ;
+   buf = (char *)calloc((2*sp[P_WIDTH] + 4), sp[P_DEPTH_LIMIT]);  // I think this gives more than enough space
+   buf[0] = '\0';
+}
+
+void initializeSearch(char *f) {
+   if(sp[P_MAX_LENGTH]) sp[P_DEPTH_LIMIT] = sp[P_MAX_LENGTH] + 2 * period;
+   sp[P_DEPTH_LIMIT] += 2 * period;
+   if(sp[P_FULL_PERIOD]) sp[P_FULL_PERIOD] += 2 * period - 1;
+   if(gcd(period,offset) == 1) sp[P_FULL_PERIOD] = 0;
+   if(sp[P_FULL_WIDTH] > sp[P_WIDTH]) sp[P_FULL_WIDTH] = 0;
+   if(sp[P_FULL_WIDTH] && sp[P_FULL_WIDTH] < sp[P_WIDTH]){
+      for(int i = sp[P_FULL_WIDTH]; i < sp[P_WIDTH]; ++i){
+         fpBitmask |= (1 << i);
+      }
+   }
+   p_thread = (pthread_t *)calloc(sizeof(pthread_t), numThreads) ;
+   threads = (struct searchThread *)calloc(sizeof(searchThread), numThreads) ;
+   for (int t=0; t<numThreads; t++)
+      threads[t].initializeThread(f) ;
+   divergenceLevel = 2 * period + 5 ;
 }
 
 void echoParams(){
@@ -953,17 +944,9 @@ void echoParams(){
    if(sp[P_FULL_WIDTH]) printf("Full period width: %d\n",sp[P_FULL_WIDTH]);
    if(sp[P_NUM_SHIPS] == 1) printf("Stop search if a ship is found.\n");
    else printf("Stop search if %d ships are found.\n",sp[P_NUM_SHIPS]);
-   if(sp[P_DUMP])printf("Dump period: 2^%d\n",sp[P_DUMP]);
    if(!sp[P_REORDER]) printf("Use naive search order.\n");
    if (sp[P_REORDER] == 2) printf("Use randomized search order.\n");
    if (sp[P_REORDER] == 3) printf("Use min population search order.\n");
-   if(sp[P_INIT_ROWS]){
-      printf("Initial rows:\n");
-      for(i = 0; i < 2 * period; i++){
-         for(j = width - 1; j >= 0; j--) printf("%c",(pRows[i] & (1 << j)) ? 'o':'.');
-         printf("\n");
-      }
-   }
 }
 
 void usage(){
@@ -989,9 +972,6 @@ void usage(){
    printf("  tNN  disallows full-period rows of width greater than NN\n");
    printf("  sNN  terminates the search if NN spaceships are found (default: 1)\n");
    printf("\n");
-   printf("  dNN  dumps the search state every 2^NN calculations (minimum: %d)\n",MIN_DUMP);
-   printf("  j    dumps the state at start of search\n");
-   printf("\n");
    printf("  a    searches for asymmetric spaceships\n");
    printf("  u    searches for odd bilaterally symmetric spaceships\n");
    printf("  v    searches for even bilaterally symmetric spaceships\n");
@@ -1013,7 +993,15 @@ void usage(){
    printf("  CNNN uses about NNN megabytes for lookahead cache\n") ;
 }
 
+void search() {
+   for (int i=0; i<numThreads; i++)
+      spawn_thread(i, searchWorker, &threads[i]) ;
+   for (int i=0; i<numThreads; i++)
+      join_thread(i) ;
+}
+
 int main(int argc, char *argv[]){
+   init_mutex() ;
    printf("%s\n", BANNER) ;
    printf("-") ;
    for (int i=0; i<argc; i++)
@@ -1031,9 +1019,6 @@ int main(int argc, char *argv[]){
    sp[P_FULL_WIDTH] = 0;
    sp[P_REORDER] = 1;
    sp[P_DUMP] = 0;
-   loadDumpFlag = 0;
-   dumpPeriod = 0xffffffffffffffff;  // default dump period is 2^64, so the state will never be dumped
-   int dumpandexit = 0;
    int skipNext = 0;
    int div1,div2;
    int s;
@@ -1043,8 +1028,7 @@ int main(int argc, char *argv[]){
    }
    const char *err ;
    parseRule(rule, nttable) ; // pick up default rule
-   if(argc == 3 && (!strcmp(argv[1],"s") || !strcmp(argv[1],"S") || !strcmp(argv[1],"p") || !strcmp(argv[1],"P"))) loadDumpFlag = 1;
-   else{
+   {
       for(s = 1; s < argc; s++){    //read input parameters
          if(skipNext){
             skipNext = 0;
@@ -1069,8 +1053,6 @@ int main(int argc, char *argv[]){
             case 'a': case 'A': sp[P_SYMMETRY] = SYM_ASYM; break;
             case 'g': case 'G': sp[P_SYMMETRY] = SYM_GUTTER; break;
             case 'm': case 'M': sscanf(&argv[s][1], "%d", &sp[P_MAX_LENGTH]); break;
-            case 'd': case 'D': sscanf(&argv[s][1], "%d", &sp[P_DUMP]); break;
-            case 'j': case 'J': dumpandexit = 1; break;
             case 'e': case 'E': sp[P_INIT_ROWS] = s + 1; skipNext = 1; break;
             case 'f': case 'F': sscanf(&argv[s][1], "%d", &sp[P_FULL_PERIOD]); break;
             case 's': case 'S': sscanf(&argv[s][1], "%d", &sp[P_NUM_SHIPS]); break;
@@ -1090,15 +1072,14 @@ int main(int argc, char *argv[]){
    cachesize = 32768 ;
    while (cachesize * sizeof(cacheentry) < 550000 * cachemem)
       cachesize <<= 1 ;
-   memusage += sizeof(cacheentry) * cachesize ;
-   cache = (struct cacheentry *)calloc(sizeof(cacheentry), cachesize) ;
-   if(loadDumpFlag) loadState(argv[1],argv[2]);     //load search state from file
-   else initializeSearch(argv[sp[P_INIT_ROWS]]);    //initialize search based on input parameters
    if(!sp[P_WIDTH] || !sp[P_PERIOD] || !sp[P_OFFSET] || !sp[P_SYMMETRY]){
       printf("You must specify a width, period, offset, and symmetry type.\n");
       printf("For command line options, type 'zfind c'.\n");
       return 0;
    }
+   width = sp[P_WIDTH];
+   period = sp[P_PERIOD];
+   offset = sp[P_OFFSET];
    echoParams();
    makePhases();                    //make phase tables for determining successor row indices
    if(gcd(period,offset) > 1){      //make phase tables for determining equivalent subperiodic rows
@@ -1113,28 +1094,9 @@ int main(int argc, char *argv[]){
       }
    }
    makeTables();                    //make lookup tables for determining successor rows
-   if(!loadDumpFlag){               //these initialization steps must be performed after makeTables()
-      for (int i=0; i<sp[P_DEPTH_LIMIT]; i++) {
-         pInd[i] = gInd3[0] + gInd3[0][0] ;
-         pRemain[i] = 0 ;
-      }
-      pRemain[2 * period] = gInd3[0][1] - gInd3[0][0] - 1 ;
-      pInd[2 * period] = gInd3[0] + gInd3[0][0] ;
-      if(sp[P_INIT_ROWS]){
-         getoffsetcount(pRows[0], pRows[period], pRows[period+backOff[0]],
-                        pInd[2*period], pRemain[2*period]) ;
-      }
-   }
-   if(dumpandexit){
-      dumpState(rowNum);
-      if (dumpFlag == DUMPSUCCESS) printf("State dumped to file %s%04d\n",DUMPROOT,dumpNum - 1);
-      else printf("Dump failed\n");
-      return 0;
-   }
-   buf = (char *)calloc((2*sp[P_WIDTH] + 4), sp[P_DEPTH_LIMIT]);  // I think this gives more than enough space
-   buf[0] = '\0';
+   initializeSearch(argv[sp[P_INIT_ROWS]]);    //initialize search based on input parameters
    printf("Starting search\n");
    fflush(stdout) ;
-   search();
+   ::search();
    return 0;
 }
