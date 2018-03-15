@@ -1056,12 +1056,13 @@ int main(int argc, char *argv[]){
             case 'e': case 'E': sp[P_INIT_ROWS] = s + 1; skipNext = 1; break;
             case 'f': case 'F': sscanf(&argv[s][1], "%d", &sp[P_FULL_PERIOD]); break;
             case 's': case 'S': sscanf(&argv[s][1], "%d", &sp[P_NUM_SHIPS]); break;
-            case 't': case 'T': sscanf(&argv[s][1], "%d", &sp[P_FULL_WIDTH]); break;
+            case 't':           sscanf(&argv[s][1], "%d", &sp[P_FULL_WIDTH]); break;
             case 'o': case 'O': sp[P_REORDER] = 0; break;
             case 'r':           sp[P_REORDER] = 2; break;
             case 'n':           sp[P_REORDER] = 3; break;
             case 'R': sscanf(&argv[s][1], "%lld", &memlimit) ; memlimit <<= 20 ; break ;
             case 'C': sscanf(&argv[s][1], "%d", &cachemem); break ;
+            case 'T': sscanf(&argv[s][1], "%d", &numThreads); break ;
             default:
                printf("Unrecognized option %s\n", argv[s]) ;
                exit(10) ;
