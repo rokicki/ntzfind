@@ -1,8 +1,11 @@
-/* ntzfind 3.0 (horizontal shift not included in this version)
+/* ntzfind 3.1
 ** A spaceship search program by "zdr" with modifications by Matthias Merzenich and Aidan Pierce and Tomas Rokicki
 **
 ** Warning: this program uses a lot of memory (especially for wide searches).
 */
+
+/* define or undef KNIGHT to include knight support */
+#define KNIGHT
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,7 +22,7 @@
 #define MAXWIDTH 10  // increasing this requires a few other changes
 #define MIN_DUMP 20
 #define DEFAULT_DEPTH_LIMIT 2000
-#define NUM_PARAMS 13
+#define NUM_PARAMS 15
 
 #define P_WIDTH 1
 #define P_PERIOD 2
@@ -33,6 +36,8 @@
 #define P_FULL_WIDTH 10
 #define P_REORDER 11
 #define P_DUMP 12
+#define P_X_OFFSET 13
+#define P_KNIGHT_PHASE 14
 
 #define SYM_ASYM 1
 #define SYM_ODD 2
@@ -489,6 +494,23 @@ void printInfo(int currentDepth, unsigned long long numCalcs, double runTime){
    fflush(stdout);
 }
 
+#ifdef KNIGHT
+int kshiftb[MAXPERIOD], kshift0[MAXPERIOD], kshift1[MAXPERIOD],
+    kshift2[MAXPERIOD], kshift3[MAXPERIOD] ;
+void makekshift(int a){
+   int i;
+   kshift0[a] = 1;
+   for(i = 0; i < period; ++i){
+      if((3*period + i - fwdOff[i]) % period == a) kshift1[i] = 1;
+      if((3*period + i - doubleOff[i]) % period == a) kshift2[i] = 1;
+      if((3*period + i - tripleOff[i]) % period == a) kshift3[i] = 1;
+      if((3*period + i + backOff[i]) % period == a) kshiftb[i] = 1;
+   }
+}
+#endif
+
+
+
 void buffPattern(int theRow){
    int firstRow = 2 * period;
    if(sp[P_INIT_ROWS]) firstRow = 0;
@@ -554,12 +576,20 @@ int lookAhead(int a){
 
    getoffsetcount(pRows[a - sp[P_PERIOD] - fwdOff[phase]],
                   pRows[a - fwdOff[phase]],
+#ifdef KNIGHT
+                  pRows[a] >> kshift0[phase], riStart11, numRows11) ;
+#else
                   pRows[a], riStart11, numRows11) ;
+#endif
    if (!numRows11)
       return 0 ;
    getoffsetcount(pRows[a - sp[P_PERIOD] - doubleOff[phase]],
                   pRows[a - doubleOff[phase]],
+#ifdef KNIGHT
+                  pRows[a - fwdOff[phase]] >> kshift1[phase], riStart12, numRows12) ;
+#else
                   pRows[a - fwdOff[phase]], riStart12, numRows12) ;
+#endif
    
    if(tripleOff[phase] >= sp[P_PERIOD]){
       int off = a + sp[P_PERIOD] - tripleOff[phase] ;
@@ -573,23 +603,45 @@ int lookAhead(int a){
    } else {
       getoffsetcount(pRows[a - sp[P_PERIOD] - tripleOff[phase]],
                      pRows[a - tripleOff[phase]],
+#ifdef KNIGHT
+                     pRows[a - doubleOff[phase]] >> kshift2[phase], riStart13, numRows13) ;
+#else
                      pRows[a - doubleOff[phase]], riStart13, numRows13) ;
+#endif
    }
    int k = getkey(riStart11, riStart12, riStart13,
+#ifdef KNIGHT
+    (phase << (2 * width)) +
+#endif
     (((pRows[a-doubleOff[phase]] << width) + pRows[a-tripleOff[phase]]) << 1)
         + (numRows13 == 1)) ;
    if (k < 0)
       return k+2 ;
    for(ri11 = 0; ri11 < numRows11; ++ri11){
       row11 = riStart11[ri11];
+#ifdef KNIGHT
+      if (kshift1[phase] && (row11 & 1))
+         continue ;
+      row11 >>= kshift1[phase] ;
+#endif
       for(ri12 = 0; ri12 < numRows12; ++ri12){
          row12 = riStart12[ri12] ;
+#ifdef KNIGHT
+         if (kshift2[phase] && (row12 & 1))
+            continue ;
+         row12 >>= kshift2[phase] ;
+#endif
          getoffsetcount(pRows[a - doubleOff[phase]],
                         row12, row11, riStart22, numRows22) ;
          if(!numRows22) continue;
          
          for(ri13 = 0; ri13 < numRows13; ++ri13){
             row13 = riStart13[ri13] ;
+#ifdef KNIGHT
+            if (kshift3[phase] && (row13 & 1))
+               continue ;
+            row13 >>= kshift3[phase] ;
+#endif
             getoffsetcount(pRows[a - tripleOff[phase]],
                            row13, row12, riStart23, numRows23) ;
             if(!numRows23) continue;
@@ -599,6 +651,11 @@ int lookAhead(int a){
                uint16_t *p = getoffset(row13, row23) ;
                for(ri22 = 0; ri22 < numRows22; ++ri22){
                   row22 = riStart22[ri22] ;
+#ifdef KNIGHT
+                  if (kshift3[phase] && (row22 & 1))
+                     continue ;
+                  row22 >>= kshift3[phase] ;
+#endif
                   if (p[row22+1]!=p[row22]) {
                      setkey(k, 1) ;
                      return 1 ;
@@ -697,7 +754,7 @@ void search(){
    double ms = get_cpu_time();
    phase = currRow % period;
    int firstasymm = 0 ;
-   if (sp[P_SYMMETRY] == SYM_ASYM)
+   if (sp[P_SYMMETRY] == SYM_ASYM && sp[P_X_OFFSET] == 0)
       firstasymm = currRow ;
    for(;;){
       ++calcs;
@@ -738,6 +795,10 @@ void search(){
       }
       --pRemain[currRow];
       pRows[currRow] = pInd[currRow][pRemain[currRow]];
+#ifdef KNIGHT
+      if (sp[P_X_OFFSET] && phase == sp[P_KNIGHT_PHASE] && pRows[currRow] & 1)
+         continue ;
+#endif
       if (currRow <= firstasymm) {
          int palin = checkPalindrome(pRows[currRow]) ;
          if (palin < 0)
@@ -801,7 +862,11 @@ void search(){
       }
       getoffsetcount(pRows[currRow - 2 * period],
                      pRows[currRow - period],
+#ifdef KNIGHT
+                     pRows[currRow - period + backOff[phase]] >> kshiftb[phase],
+#else
                      pRows[currRow - period + backOff[phase]],
+#endif
                      pInd[currRow], pRemain[currRow]) ;
    }
 }
@@ -868,6 +933,8 @@ void loadState(char * cmd, char * file){
          fpBitmask |= (1 << i);
       }
    }
+   if (sp[P_X_OFFSET]) sp[P_SYMMETRY] = SYM_ASYM ;
+   sp[P_KNIGHT_PHASE] %= period ;
    
    pRows = (uint16_t *)calloc(1+sp[P_DEPTH_LIMIT], sizeof(uint16_t));
    pInd = (uint16_t **)calloc(1+sp[P_DEPTH_LIMIT], sizeof(uint16_t *));
@@ -927,6 +994,8 @@ void initializeSearch(char * file){
          fpBitmask |= (1 << i);
       }
    }
+   if (sp[P_X_OFFSET]) sp[P_SYMMETRY] = SYM_ASYM ;
+   sp[P_KNIGHT_PHASE] %= period ;
    
    pRows = (uint16_t *)calloc(1+sp[P_DEPTH_LIMIT], sizeof(uint16_t));
    pInd = (uint16_t **)calloc(1+sp[P_DEPTH_LIMIT], sizeof(uint16_t *));
@@ -947,6 +1016,10 @@ void echoParams(){
    else if(sp[P_SYMMETRY] == SYM_ODD) printf("Symmetry: odd\n");
    else if(sp[P_SYMMETRY] == SYM_EVEN) printf("Symmetry: even\n");
    else if(sp[P_SYMMETRY] == SYM_GUTTER) printf("Symmetry: gutter\n");
+   if (sp[P_X_OFFSET]) {
+      printf("Horizontal offset: %d\n",sp[P_X_OFFSET]);
+      printf("Phase %d has width %d\n",sp[P_KNIGHT_PHASE],sp[P_WIDTH] - 1);
+   }
    if(sp[P_MAX_LENGTH]) printf("Max length: %d\n",sp[P_MAX_LENGTH]);
    else printf("Depth limit: %d\n",sp[P_DEPTH_LIMIT] - 2 * period);
    if(sp[P_FULL_PERIOD]) printf("Full period by depth %d\n",sp[P_FULL_PERIOD] - 2 * period + 1);
@@ -989,6 +1062,14 @@ void usage(){
    printf("  tNN  disallows full-period rows of width greater than NN\n");
    printf("  sNN  terminates the search if NN spaceships are found (default: 1)\n");
    printf("\n");
+#ifdef KNIGHT
+   printf("  xNN  searches for spaceships that travel NN cells horizontally every period\n");
+   printf("       (only values of 0 and 1 are currently supported)\n");
+   printf("       when using x1, one phase of the spaceship will have a width of 1 less\n");
+   printf("       than the width specified by the 'w' parameter\n");
+   printf("  NNN  when using x1, NN is the phase with the smaller width (default: 0)\n");
+   printf("\n");
+#endif
    printf("  dNN  dumps the search state every 2^NN calculations (minimum: %d)\n",MIN_DUMP);
    printf("  j    dumps the state at start of search\n");
    printf("\n");
@@ -1031,6 +1112,8 @@ int main(int argc, char *argv[]){
    sp[P_FULL_WIDTH] = 0;
    sp[P_REORDER] = 1;
    sp[P_DUMP] = 0;
+   sp[P_X_OFFSET] = 0 ;
+   sp[P_KNIGHT_PHASE] = 0 ;
    loadDumpFlag = 0;
    dumpPeriod = 0xffffffffffffffff;  // default dump period is 2^64, so the state will never be dumped
    int dumpandexit = 0;
@@ -1077,6 +1160,9 @@ int main(int argc, char *argv[]){
             case 't': case 'T': sscanf(&argv[s][1], "%d", &sp[P_FULL_WIDTH]); break;
             case 'o': case 'O': sp[P_REORDER] = 0; break;
             case 'r':           sp[P_REORDER] = 2; break;
+            case 'x': case 'X': sscanf(&argv[s][1], "%d", &sp[P_X_OFFSET]); break;
+            case 'N': sscanf(&argv[s][1], "%d", &sp[P_KNIGHT_PHASE]); break;
+
             case 'n':           sp[P_REORDER] = 3; break;
             case 'R': sscanf(&argv[s][1], "%lld", &memlimit) ; memlimit <<= 20 ; break ;
             case 'C': sscanf(&argv[s][1], "%d", &cachemem); break ;
@@ -1112,6 +1198,10 @@ int main(int argc, char *argv[]){
          makeEqRows(period / div2,2);
       }
    }
+#ifdef KNIGHT
+   if (sp[P_X_OFFSET])
+      makekshift(sp[P_KNIGHT_PHASE]) ;
+#endif
    makeTables();                    //make lookup tables for determining successor rows
    if(!loadDumpFlag){               //these initialization steps must be performed after makeTables()
       for (int i=0; i<sp[P_DEPTH_LIMIT]; i++) {
